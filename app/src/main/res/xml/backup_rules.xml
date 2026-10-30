@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. The text index holds the contents of the person's PDFs and can be rebuilt, so it is not backed up. -->
+<full-backup-content>
+    <exclude domain="database" path="pdf_text.db" />
+    <exclude domain="database" path="pdf_text.db-wal" />
+    <exclude domain="database" path="pdf_text.db-shm" />
+    <exclude domain="database" path="pdf_text.db-journal" />
+</full-backup-content>

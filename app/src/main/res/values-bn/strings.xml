@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tools screen -->
+    <string name="tools_search_open">টুল খুঁজুন</string>
+    <string name="tools_search_hint">টুল খুঁজুন</string>
+    <string name="tools_search_close">খোঁজা বন্ধ করুন</string>
+    <string name="tools_search_clear">লেখা মুছুন</string>
+    <string name="tools_view_list">তালিকা ভিউতে যান</string>
+    <string name="tools_view_grid">গ্রিড ভিউতে যান</string>
+    <string name="tools_empty_title">কোনো টুল পাওয়া যায়নি</string>
+
+    <!-- Tool categories -->
+    <string name="cat_organize">PDF সাজান</string>
+    <string name="cat_optimize">PDF উন্নত করুন</string>
+    <string name="cat_to_pdf">PDF-এ রূপান্তর</string>
+    <string name="cat_from_pdf">PDF থেকে রূপান্তর</string>
+    <string name="cat_edit">PDF সম্পাদনা</string>
+    <string name="cat_protect">সুরক্ষা ও তথ্য</string>
+
+    <!-- Tool names -->
+    <string name="tool_merge">PDF যুক্ত করুন</string>
+    <string name="tool_split">PDF ভাগ করুন</string>
+    <string name="tool_extract">পৃষ্ঠা রাখুন / মুছুন</string>
+    <string name="tool_reorder">পৃষ্ঠা সাজান</string>
+    <string name="tool_blank">ফাঁকা পৃষ্ঠা</string>
+    <string name="tool_nup">প্রতি শিটে পৃষ্ঠা</string>
+    <string name="tool_booklet">বুকলেট</string>
+    <string name="tool_compress">PDF ছোট করুন</string>
+    <string name="tool_repair">PDF মেরামত</string>
+    <string name="tool_img2pdf">ছবি থেকে PDF</string>
+    <string name="tool_scan">স্ক্যান করে PDF</string>
+    <string name="tool_text2pdf">লেখা থেকে PDF</string>
+    <string name="tool_pdf2img">PDF থেকে ছবি</string>
+    <string name="tool_pdf2text">PDF থেকে লেখা</string>
+    <string name="tool_extractimg">ছবি বের করুন</string>
+    <string name="tool_watermark">ওয়াটারমার্ক</string>
+    <string name="tool_pagenum">পৃষ্ঠা নম্বর</string>
+    <string name="tool_sign">PDF-এ সই</string>
+    <string name="tool_notes">হাইলাইট / নোট</string>
+    <string name="tool_resize">কাগজের মাপ</string>
+    <string name="tool_poster">পোস্টার প্রিন্ট</string>
+    <string name="tool_croprotate">কাটা ও ঘোরানো</string>
+    <string name="tool_lock">লক / আনলক</string>
+    <string name="tool_metadata">মেটাডেটা</string>
+
+    <!-- Main navigation -->
+    <string name="nav_home">হোম</string>
+    <string name="nav_files">ফাইল</string>
+    <string name="nav_tools">টুলস</string>
+    <string name="nav_scanner">স্ক্যানার</string>
+    <string name="nav_settings">সেটিংস</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">সেটিংস</string>
+    <string name="settings_appearance">চেহারা</string>
+    <string name="settings_theme">থিম</string>
+    <string name="settings_theme_system">সিস্টেম ডিফল্ট</string>
+    <string name="settings_theme_light">লাইট</string>
+    <string name="settings_theme_dark">ডার্ক</string>
+    <string name="settings_wallpaper_colors">ওয়ালপেপারের রং</string>
+    <string name="settings_files">ফাইল</string>
+    <string name="settings_sort">ডিফল্ট সর্টিং</string>
+    <string name="settings_sort_name">নাম (A–Z)</string>
+    <string name="settings_sort_newest">নতুন আগে</string>
+    <string name="settings_sort_largest">বড় আগে</string>
+    <string name="settings_search_inside">PDF-এর ভেতরে খুঁজুন</string>
+    <string name="settings_search_inside_desc">খোঁজার জন্য PDF-এর লেখা এই ফোনে রাখা হয়, যাতে ভেতরের শব্দও পাওয়া যায়। বন্ধ করলে সংরক্ষিত লেখা মুছে যায়।</string>
+
+    <!-- Home and Files -->
+    <string name="home_quick_actions">দ্রুত কাজ</string>
+    <string name="home_recent">সাম্প্রতিক ফাইল</string>
+    <string name="home_see_all">সব দেখুন</string>
+    <string name="home_search">ফাইল খুঁজুন</string>
+    <string name="home_recent_empty_title">এখনও কোনো সাম্প্রতিক ফাইল নেই</string>
+    <string name="home_browse_files">ফাইল দেখুন</string>
+    <string name="files_search_hint">PDF Manager-এ খুঁজুন</string>
+</resources>

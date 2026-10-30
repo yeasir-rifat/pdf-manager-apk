@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and newer: same rule for cloud backup and for phone-to-phone transfer. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="pdf_text.db" />
+        <exclude domain="database" path="pdf_text.db-wal" />
+        <exclude domain="database" path="pdf_text.db-shm" />
+        <exclude domain="database" path="pdf_text.db-journal" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="pdf_text.db" />
+        <exclude domain="database" path="pdf_text.db-wal" />
+        <exclude domain="database" path="pdf_text.db-shm" />
+        <exclude domain="database" path="pdf_text.db-journal" />
+    </device-transfer>
+</data-extraction-rules>

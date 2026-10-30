@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">PDF Manager</string>
+
+    <!-- Tools screen -->
+    <string name="tools_search_open">Search tools</string>
+    <string name="tools_search_hint">Search tools</string>
+    <string name="tools_search_close">Close search</string>
+    <string name="tools_search_clear">Clear search</string>
+    <string name="tools_view_list">Switch to list view</string>
+    <string name="tools_view_grid">Switch to grid view</string>
+    <string name="tools_empty_title">No tools found</string>
+
+    <!-- Tool categories -->
+    <string name="cat_organize">Organize PDF</string>
+    <string name="cat_optimize">Optimize PDF</string>
+    <string name="cat_to_pdf">Convert to PDF</string>
+    <string name="cat_from_pdf">Convert from PDF</string>
+    <string name="cat_edit">Edit PDF</string>
+    <string name="cat_protect">Protect &amp; Info</string>
+
+    <!-- Tool names -->
+    <string name="tool_merge">Merge PDF</string>
+    <string name="tool_split">Split PDF</string>
+    <string name="tool_extract">Extract Pages</string>
+    <string name="tool_reorder">Reorder</string>
+    <string name="tool_blank">Blank page</string>
+    <string name="tool_nup">Pages/Sheet</string>
+    <string name="tool_booklet">Booklet</string>
+    <string name="tool_compress">Compress</string>
+    <string name="tool_repair">Repair PDF</string>
+    <string name="tool_img2pdf">Image to PDF</string>
+    <string name="tool_scan">Scan to PDF</string>
+    <string name="tool_text2pdf">Text to PDF</string>
+    <string name="tool_pdf2img">PDF to Image</string>
+    <string name="tool_pdf2text">PDF to Text</string>
+    <string name="tool_extractimg">Get images</string>
+    <string name="tool_watermark">Watermark</string>
+    <string name="tool_pagenum">Page numbers</string>
+    <string name="tool_sign">Sign PDF</string>
+    <string name="tool_notes">Annotate</string>
+    <string name="tool_resize">Resize paper</string>
+    <string name="tool_poster">Poster print</string>
+    <string name="tool_croprotate">Crop &amp; Rotate</string>
+    <string name="tool_lock">Lock / Unlock</string>
+    <string name="tool_metadata">Metadata</string>
+
+    <!-- Main navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_files">Files</string>
+    <string name="nav_tools">Tools</string>
+    <string name="nav_scanner">Scanner</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">System default</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_wallpaper_colors">Wallpaper colors</string>
+    <string name="settings_files">Files</string>
+    <string name="settings_sort">Default sorting</string>
+    <string name="settings_sort_name">Name (A–Z)</string>
+    <string name="settings_sort_newest">Newest first</string>
+    <string name="settings_sort_largest">Largest first</string>
+    <string name="settings_search_inside">Search inside PDFs</string>
+    <string name="settings_search_inside_desc">Keeps the text of your PDFs on this phone so search can find words inside them. Turning it off deletes the stored text.</string>
+
+    <!-- Home and Files -->
+    <string name="home_quick_actions">Quick actions</string>
+    <string name="home_recent">Recent files</string>
+    <string name="home_see_all">See all</string>
+    <string name="home_search">Search files</string>
+    <string name="home_recent_empty_title">No recent files yet</string>
+    <string name="home_browse_files">Browse files</string>
+    <string name="files_search_hint">Search in PDF Manager</string>
+</resources>
