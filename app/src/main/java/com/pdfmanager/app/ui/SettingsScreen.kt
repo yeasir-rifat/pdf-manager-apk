@@ -96,13 +96,6 @@ fun SettingsScreen(
                 )
                 HorizontalDivider()
                 val ctx = androidx.compose.ui.platform.LocalContext.current
-                val askName = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(NamePref.enabled(ctx)) }
-                SwitchRow(
-                    title = "Ask for file name",
-                    description = "After a tool finishes, ask what to call the new file",
-                    checked = askName.value,
-                    onChange = { askName.value = it; NamePref.set(ctx, it) }
-                )
             }
         }
         SnackbarHost(
