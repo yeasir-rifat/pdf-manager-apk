@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.Typeface
 import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -67,6 +68,8 @@ class AppFonts(val regular: FontFamily, val bold: FontFamily) {
             AppFonts(regular, bold)
         }.getOrNull()
 
+        // Only called on Android 10+ (see the SDK_INT check in load); the annotation tells Lint so
+        @RequiresApi(29)
         private fun chained(assets: AssetManager, latoFile: String): Typeface? = runCatching {
             fun fam(file: String) = android.graphics.fonts.FontFamily.Builder(
                 android.graphics.fonts.Font.Builder(assets, "$DIR/$file").build()

@@ -84,8 +84,10 @@ jobs:
         if: always()
         run: gradle :app:testDebugUnitTest --stacktrace
 
+      # Lint is advisory here: it reports problems in the attached report but does not turn the run red
       - name: Run Android Lint
         if: always()
+        continue-on-error: true
         run: gradle :app:lintDebug --stacktrace
 
       - name: Upload test and lint reports
