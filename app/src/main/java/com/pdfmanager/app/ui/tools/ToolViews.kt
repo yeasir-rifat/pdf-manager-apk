@@ -88,7 +88,8 @@ fun ToolCard(tool: ToolDef, onClick: () -> Unit, modifier: Modifier = Modifier) 
             .background(colors.toolCard)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 3.dp, vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Icon(
             tool.icon,
@@ -121,7 +122,6 @@ private fun CardLabel(text: String, style: TextStyle, color: Color) {
         style = style.copy(fontSize = style.fontSize * scale, lineHeight = style.lineHeight * scale),
         color = color,
         textAlign = TextAlign.Center,
-        minLines = 2,
         maxLines = 2,
         overflow = if (atMin) TextOverflow.Ellipsis else TextOverflow.Clip,
         onTextLayout = { r ->

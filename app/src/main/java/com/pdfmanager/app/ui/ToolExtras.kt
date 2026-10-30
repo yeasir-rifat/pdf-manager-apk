@@ -61,15 +61,31 @@ fun RecentPdfsStrip(exclude: Set<String> = emptySet(), onPick: (Picked) -> Unit)
 @Composable
 fun RecentResults(refresh: Any?, matches: (String) -> Boolean, onOpen: (String) -> Unit) {
     val context = LocalContext.current
-    val files by produceState<List<OutputFile>>(emptyList(), refresh) {
+    val loaded by produceState<List<OutputFile>?>(null, refresh, ResultsVersion.tick) {
         value = withContext(Dispatchers.IO) {
-            runCatching { OutputStore.recentPdfs(context, 60).filter { matches(it.name) }.take(5) }
+            runCatching { OutputStore.recentPdfs(context, 200).filter { matches(it.name) }.take(30) }
                 .getOrDefault(emptyList())
         }
     }
-    if (files.isEmpty()) return
+    // Nothing is drawn until the list has loaded, so the page does not jump
+    val files = loaded ?: return
+    if (files.isEmpty()) {
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(AppIcons.PictureAsPdf, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.outline)
+            Text(
+                "Processed files will appear here",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SectionLabel("Recent results")
+        SectionLabel("Processed files")
         files.forEach { f ->
             AppCard(Modifier.fillMaxWidth(), onClick = { onOpen(f.uri.toString()) }) {
                 Row(

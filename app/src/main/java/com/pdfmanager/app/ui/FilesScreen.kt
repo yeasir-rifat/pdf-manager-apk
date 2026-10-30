@@ -219,14 +219,14 @@ fun FilesScreen(
         },
         floatingActionButton = {
             if (granted && !selecting) {
-                ExtendedFloatingActionButton(
+                FloatingActionButton(
                     onClick = { showNew = true },
-                    icon = { Icon(AppIcons.Add, contentDescription = null) },
-                    text = { Text("New", style = MaterialTheme.typography.labelLarge) },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = RoundedCornerShape(16.dp)
-                )
+                    shape = CircleShape
+                ) {
+                    Icon(AppIcons.Add, contentDescription = "New")
+                }
             }
         }
     ) { padding ->

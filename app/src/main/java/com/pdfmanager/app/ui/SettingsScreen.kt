@@ -94,6 +94,15 @@ fun SettingsScreen(
                     checked = searchInside,
                     onChange = { vm.setSearchInside(it) }
                 )
+                HorizontalDivider()
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                var askName by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(NamePref.enabled(ctx)) }
+                SwitchRow(
+                    title = "Ask for file name",
+                    description = "After a tool finishes, ask what to call the new file",
+                    checked = askName,
+                    onChange = { askName = it; NamePref.set(ctx, it) }
+                )
             }
         }
         SnackbarHost(

@@ -68,6 +68,16 @@ fun baseOf(name: String) = name.substringBeforeLast('.')
 fun outName(prefix: String, source: String?): String =
     "${prefix}_${source?.takeIf { it.isNotBlank() }?.let { baseOf(it) } ?: stamp()}.pdf"
 
+/** Settings switch: ask for the file name after a tool has made a file. */
+object NamePref {
+    private fun prefs(c: android.content.Context) = c.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+    fun enabled(c: android.content.Context) = prefs(c).getBoolean("ask_name", false)
+    fun set(c: android.content.Context, on: Boolean) = prefs(c).edit().putBoolean("ask_name", on).apply()
+}
+
+/** Bumped after a rename so every "Processed files" list reloads. */
+object ResultsVersion { var tick by mutableStateOf(0) }
+
 /** Runs one background operation and exposes its state to the UI. */
 class ToolJob {
     var busy by mutableStateOf(false)
@@ -75,6 +85,9 @@ class ToolJob {
     var failed by mutableStateOf(false)
     var result by mutableStateOf<String?>(null)
     var progress by mutableStateOf<String?>(null)
+    /** The file just made, offered for renaming when "Ask for file name" is on in Settings. */
+    var renameCandidate by mutableStateOf<Uri?>(null)
+    var allowRename = true
 
     fun fail(message: String) {
         status = message; failed = true; result = null
@@ -82,11 +95,12 @@ class ToolJob {
 
     fun launch(scope: CoroutineScope, work: () -> Pair<String, Uri?>) {
         if (busy) return
-        busy = true; status = null; failed = false; result = null; progress = null
+        busy = true; status = null; failed = false; result = null; progress = null; renameCandidate = null
         scope.launch {
             try {
                 val (msg, uri) = withContext(Dispatchers.IO) { work() }
                 status = msg; result = uri?.toString()
+                if (allowRename) renameCandidate = uri
             } catch (e: Exception) {
                 fail("Failed: ${e.message ?: e.javaClass.simpleName}")
             } finally {
@@ -128,9 +142,10 @@ fun ToolScaffold(title: String, onBack: (() -> Unit)?, content: @Composable Colu
         Column(
             Modifier.fillMaxSize().padding(p).verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            content = content
-        )
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            content()
+        }
     }
 }
 
@@ -153,6 +168,7 @@ fun JobStatus(
     openIcon: ImageVector = AppIcons.PictureAsPdf
 ) {
     val context = LocalContext.current
+    RenameDialog(job)
     Column(Modifier.fillMaxWidth().animateContentSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (job.busy) {
             AppCard(Modifier.fillMaxWidth()) {
@@ -334,6 +350,7 @@ fun ImagesToPdfScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             }
         })
         JobStatus(job, onOpen)
+        RecentResults(job.result, { it.startsWith("Images_") }, onOpen)
     }
 }
 
@@ -492,7 +509,7 @@ fun CropRotateScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 val p = picked!!
                 val (rot, t, b, l, r) = listOf(rotation.toFloat(), top, bottom, left, right)
                 job.launch(scope) {
-                    val out = OutputStore.savePdf(context, outName("Edited", p.name)) {
+                    val out = OutputStore.savePdf(context, outName("Cropped", p.name)) {
                         PdfOps.cropRotate(context, p.uri, it, rot.toInt(), t, b, l, r)
                     }
                     "Done. Saved in Documents/PDF Manager" to out
@@ -500,6 +517,7 @@ fun CropRotateScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             }
         )
         JobStatus(job, onOpen)
+        RecentResults(job.result, { it.startsWith("Cropped_") || it.startsWith("Edited_") }, onOpen)
     }
 }
 
@@ -552,5 +570,57 @@ fun LockUnlockScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             }
         )
         JobStatus(job, onOpen)
+        RecentResults(job.result, { it.startsWith("Locked_") || it.startsWith("Unlocked_") }, onOpen)
     }
+}
+
+
+/** Lets the person rename the file a tool just saved. Shown only when the Settings switch is on. */
+@Composable
+private fun RenameDialog(job: ToolJob) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val uri = job.renameCandidate ?: return
+    if (!NamePref.enabled(context)) return
+    val current by produceState<String?>(null, uri) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            }.getOrNull()
+        }
+    }
+    val name = current?.takeIf { it.endsWith(".pdf", true) } ?: return
+    var input by remember(name) { mutableStateOf(name.removeSuffix(".pdf")) }
+    val cleaned = input.trim().removeSuffix(".pdf").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+    AlertDialog(
+        onDismissRequest = { job.renameCandidate = null },
+        title = { Text("Name your file") },
+        text = {
+            OutlinedTextField(
+                value = input, onValueChange = { input = it }, singleLine = true,
+                label = { Text("File name") }, suffix = { Text(".pdf") }
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = cleaned.isNotBlank(), onClick = {
+                job.renameCandidate = null
+                if ("$cleaned.pdf" != name) scope.launch {
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val v = android.content.ContentValues().apply {
+                                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "$cleaned.pdf")
+                            }
+                            context.contentResolver.update(uri, v, null, null) > 0
+                        }.getOrDefault(false)
+                    }
+                    if (ok) {
+                        job.status = "Saved as $cleaned.pdf in Documents/PDF Manager"
+                        ResultsVersion.tick++
+                    } else job.fail("Could not rename the file")
+                }
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = { job.renameCandidate = null }) { Text("Keep name") } }
+    )
 }
