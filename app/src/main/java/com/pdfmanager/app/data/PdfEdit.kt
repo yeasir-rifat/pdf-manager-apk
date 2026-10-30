@@ -335,6 +335,10 @@ object MarkArt {
             typeface = Typeface.DEFAULT_BOLD
         }
         val pad = 24
+        // Very long text is made smaller instead of being cut off at the edge of the picture
+        val room = 4000f - pad * 2
+        val full = paint.measureText(text)
+        if (full > room) paint.textSize = paint.textSize * room / full
         val w = (paint.measureText(text).toInt() + pad * 2).coerceIn(48, 4000)
         val fm = paint.fontMetrics
         val h = (fm.descent - fm.ascent).toInt() + pad * 2

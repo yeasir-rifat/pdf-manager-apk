@@ -211,6 +211,8 @@ private val singleFileTools = listOf(
     SendTool("Poster print", AppIcons.Poster, "poster", Accent.Violet),
     SendTool("Crop & Rotate", AppIcons.CropRotate, "croprotate", Accent.Indigo),
     SendTool("Lock / Unlock", AppIcons.Lock, "lock", Accent.Rose),
+    SendTool("Repair PDF", AppIcons.Handyman, "repair", Accent.Rose),
+    SendTool("Edit metadata", AppIcons.DriveFileRenameOutline, "metadata", Accent.Rose),
     SendTool("Pages per sheet", AppIcons.GridView, "nup", Accent.Indigo),
     SendTool("Booklet", AppIcons.AutoStories, "booklet", Accent.Indigo),
     SendTool("PDF to Image", AppIcons.PhotoLibrary, "pdf2img", Accent.Teal),

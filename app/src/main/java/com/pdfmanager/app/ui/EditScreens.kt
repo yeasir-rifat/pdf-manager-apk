@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,7 +48,7 @@ private val watermarkColors = listOf(
 fun WatermarkScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     var imageMode by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("DRAFT") }
     var color by remember { mutableIntStateOf(0) }
@@ -152,7 +153,7 @@ private fun PositionPicker(selected: Int, onSelect: (Int) -> Unit) {
 fun PageNumbersScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     var pos by remember { mutableIntStateOf(4) }
     var format by remember { mutableIntStateOf(0) }
     var startText by remember { mutableStateOf("1") }
@@ -215,7 +216,7 @@ fun PageNumbersScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun ResizePaperScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     var size by remember { mutableIntStateOf(1) }
     var fill by remember { mutableStateOf(false) }
     val job = remember { ToolJob() }
@@ -251,8 +252,9 @@ fun ResizePaperScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun PosterScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
-    val pages = rememberPageCount(picked).value ?: 0
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
+    val pageCount = rememberPageCount(picked).value
+    val pages = pageCount ?: 0
     var page by remember(picked) { mutableIntStateOf(0) }
     var cols by remember { mutableIntStateOf(2) }
     var rows by remember { mutableIntStateOf(2) }
@@ -262,6 +264,7 @@ fun PosterScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 
     ToolScaffold("Poster print", onBack) {
         PdfPickerButton(picked) { picked = it }
+        PagesState(picked, pageCount)
         picked?.let { p ->
             if (pages > 1) PageNav(page, pages) { page = it }
             PageStage(p.uri, page) { stage ->

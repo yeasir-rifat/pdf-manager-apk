@@ -24,6 +24,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pdfmanager.app.data.OutputStore
 import com.pdfmanager.app.data.PdfOps
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -52,6 +56,22 @@ import java.util.Date
 import java.util.Locale
 
 data class Picked(val uri: Uri, val name: String)
+
+/** Lets a tool keep its chosen file when the person opens a result and comes back with Back. */
+val PickedSaver: Saver<Picked?, Any> = listSaver<Picked?, String>(
+    save = { p -> if (p == null) emptyList() else listOf(p.uri.toString(), p.name) },
+    restore = { l -> if (l.size == 2) Picked(Uri.parse(l[0]), l[1]) else null }
+)
+
+/** Same for tools with a list of files (Merge, Image to PDF). */
+val PickedListSaver: Saver<SnapshotStateList<Picked>, Any> = listSaver<SnapshotStateList<Picked>, String>(
+    save = { list -> list.flatMap { listOf(it.uri.toString(), it.name) } },
+    restore = { flat ->
+        val list = mutableStateListOf<Picked>()
+        for (i in 0 until flat.size / 2) list.add(Picked(Uri.parse(flat[2 * i]), flat[2 * i + 1]))
+        list
+    }
+)
 
 /** Files handed over from the library to a tool screen. Each screen takes them once when it opens. */
 object ToolInput {
@@ -101,8 +121,14 @@ class ToolJob {
                 val (msg, uri) = withContext(Dispatchers.IO) { work() }
                 status = msg; result = uri?.toString()
                 if (allowRename) renameCandidate = uri
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: InvalidPasswordException) {
+                fail("This PDF is locked. Unlock it first with Lock / Unlock")
             } catch (e: Exception) {
                 fail("Failed: ${e.message ?: e.javaClass.simpleName}")
+            } catch (e: OutOfMemoryError) {
+                fail("Not enough memory for this file. Try a smaller PDF or fewer pages")
             } finally {
                 busy = false; progress = null
             }
@@ -298,7 +324,7 @@ fun PdfPickerButton(picked: Picked?, onPicked: (Picked) -> Unit) {
 fun MergeScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val items = remember { mutableStateListOf<Picked>().apply { addAll(ToolInput.take()) } }
+    val items = rememberSaveable(saver = PickedListSaver) { mutableStateListOf<Picked>().apply { addAll(ToolInput.take()) } }
     val job = remember { ToolJob() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { items.add(Picked(it, PdfOps.displayName(context, it))) }
@@ -329,7 +355,7 @@ fun MergeScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun ImagesToPdfScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val items = remember { mutableStateListOf<Picked>() }
+    val items = rememberSaveable(saver = PickedListSaver) { mutableStateListOf<Picked>() }
     val job = remember { ToolJob() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { items.add(Picked(it, PdfOps.displayName(context, it))) }
@@ -360,7 +386,7 @@ fun ImagesToPdfScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun PdfToImagesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val job = remember { ToolJob() }
     ToolScaffold("PDF to Image", onBack) {
         PdfPickerButton(picked) { picked = it }
@@ -482,7 +508,7 @@ private fun CropPreview(file: Picked, rotation: Int, top: Float, bottom: Float, 
 fun CropRotateScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     var rotation by remember { mutableIntStateOf(0) }
     var top by remember { mutableFloatStateOf(0f) }
     var bottom by remember { mutableFloatStateOf(0f) }
@@ -527,7 +553,7 @@ fun CropRotateScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun LockUnlockScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     var lockMode by remember { mutableStateOf(true) }
     var password by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }

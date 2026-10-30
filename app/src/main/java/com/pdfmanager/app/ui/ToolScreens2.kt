@@ -3,6 +3,7 @@ package com.pdfmanager.app.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -21,7 +22,7 @@ import com.pdfmanager.app.data.PdfLayout
 fun CompressScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     var strength by remember { mutableIntStateOf(50) }
     // The estimate is stored together with the file it belongs to, so a stale result is never shown
     var analysis by remember { mutableStateOf<Pair<Picked, PdfCompressor.Estimate?>?>(null) }
@@ -112,21 +113,29 @@ fun CompressScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun NupScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
-    var layout by remember { mutableStateOf(PdfLayout.nupOptions[1]) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
+    var perSheet by rememberSaveable { mutableIntStateOf(4) }
+    var landscape by rememberSaveable { mutableStateOf(PdfLayout.defaultLandscape(4)) }
+    val layout = remember(perSheet, landscape) { PdfLayout.nupLayout(perSheet, landscape) }
     var border by remember { mutableStateOf(true) }
     val job = remember { ToolJob() }
-    val pages by rememberPageCount(picked)
+    val pageCount by rememberPageCount(picked)
+    val pages = pageCount?.takeIf { it > 0 }
     ToolScaffold("Pages per sheet", onBack) {
         PdfPickerButton(picked) { picked = it }
         OptionCard("Pages per sheet") {
-            ChipRow(PdfLayout.nupOptions.map { it to "${it.perSheet}" }, layout) { layout = it }
+            ChipRow(PdfLayout.nupCounts.map { it to "$it" }, perSheet) {
+                perSheet = it
+                landscape = PdfLayout.defaultLandscape(it)
+            }
+            Text("Page orientation", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ChipRow(listOf(false to "Portrait", true to "Landscape"), landscape) { landscape = it }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Draw a border around each page", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Switch(border, { border = it })
             }
         }
-        NupPreview(layout, border, pages)
+        NupPreview(layout, border, pages, picked)
         PrimaryButton("Create", icon = AppIcons.GridView, enabled = picked != null && !job.busy, onClick = {
             val p = picked!!
             val l = layout
@@ -151,9 +160,10 @@ fun NupScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun BookletScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val job = remember { ToolJob() }
-    val pages by rememberPageCount(picked)
+    val pageCount by rememberPageCount(picked)
+    val pages = pageCount?.takeIf { it > 0 }
     ToolScaffold("Booklet", onBack) {
         PdfPickerButton(picked) { picked = it }
         BookletPreview(pages)

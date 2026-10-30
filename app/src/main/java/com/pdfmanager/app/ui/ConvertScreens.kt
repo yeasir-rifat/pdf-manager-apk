@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,7 +69,7 @@ private fun TextPreviewCard(p: TextPreview) {
 fun PdfToTextScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val pages = rememberPageCount(picked).value
     val total = pages ?: 0
     var ranges by remember(picked) { mutableStateOf("") }
@@ -133,7 +134,7 @@ fun PdfToTextScreen(onBack: () -> Unit) {
 fun ExtractImagesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val pages = rememberPageCount(picked).value
     val total = pages ?: 0
     var ranges by remember(picked) { mutableStateOf("") }

@@ -116,3 +116,15 @@ Kotlin + Jetpack Compose, PDFBox-Android, Room। নতুন সব টুল 
 ## বিল্ড
 
 `./gradlew assembleDebug` — আমার এখানে অ্যান্ড্রয়েড SDK নেই, তাই অ্যাপের কোড কম্পাইল করে দেখা হয়নি। শুধু Android-মুক্ত লজিক (`ConvertHelpers`, `PageRangeParser`) আলাদা কম্পাইল করে তাদের ইউনিট টেস্ট চালানো হয়েছিল। ধাপ ৪-এ সেটাও করা যায়নি (এই পরিবেশে Kotlin কম্পাইলার নেই), তাই ধাপ ৪-এর কোড ও `SearchHelpersTest`/`UtilityHelpersTest` কোনোটাই এখনো চালানো হয়নি। CI (`.github/workflows/build-apk.yml`) বা Android Studio-তে বিল্ড করে কম্পাইল এরর থাকলে জানালে ঠিক করে দেব।
+
+## Release সই (স্থায়ী keystore)
+
+আপডেট ইনস্টল হওয়ার জন্য প্রতিটি release APK একই key দিয়ে সই হতে হবে। একবারই এটা বানাতে হয়:
+
+1. নিজের কম্পিউটারে (JDK 17 লাগবে) চালান: `./scripts/create-keystore.sh`। এটা `release.jks` বানায় আর GitHub-এর জন্য চারটি মান ছাপে।
+2. GitHub-এ Settings → Secrets and variables → Actions-এ চারটি secret যোগ করুন: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`।
+3. `release.jks` ফাইল আর পাসওয়ার্ড নিরাপদ জায়গায় রাখুন (পাসওয়ার্ড ম্যানেজার, আলাদা ব্যাকআপ)। হারালে আপডেট আর ইনস্টল হবে না। ফাইলটা git-এ দেবেন না (`.gitignore`-এ বাদ আছে)।
+
+লোকাল build-এ: `gradle assembleRelease -PkeystoreFile=/path/release.jks -PkeystorePassword=... -PkeyAlias=pdfmanager`। keystore না দিলে release APK debug key দিয়ে সই হয় আর build লগে সতর্কতা আসে।
+
+**একবারের ঝামেলা:** এখন ফোনে থাকা পুরনো APK অন্য (প্রতি রানে নতুন বানানো) key-র, তাই প্রথমবার নতুন সই করা APK ইনস্টলের আগে পুরনোটা আনইনস্টল করতে হবে (ডেটা যাবে)। এরপর থেকে সব আপডেট সরাসরি ইনস্টল হবে। Tag (`v*`) push করলে GitHub Release-এ সই করা release APK যায়।

@@ -16,7 +16,9 @@ class PrintTransformTest {
 
     @Test fun plainEnglishWatermarkIsFine() = assertNull(PrintTransform.watermarkError("DRAFT - Do not copy 2026"))
 
-    @Test fun banglaWatermarkIsRejected() = assertNotNull(PrintTransform.watermarkError("\u0996\u09B8\u09A1\u09BC\u09BE"))
+    @Test fun banglaWatermarkIsAccepted() = assertNull(PrintTransform.watermarkError("\u0996\u09B8\u09A1\u09BC\u09BE"))
+
+    @Test fun lineBreakInWatermarkIsRejected() = assertNotNull(PrintTransform.watermarkError("A\nB"))
 
     @Test fun tooLongWatermarkIsRejected() {
         assertNull(PrintTransform.watermarkError("A".repeat(PrintTransform.MAX_WATERMARK_LENGTH)))

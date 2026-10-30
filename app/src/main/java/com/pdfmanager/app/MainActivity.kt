@@ -4,6 +4,10 @@ import android.graphics.Color as AndroidColor
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
+import androidx.core.content.IntentCompat
+import com.pdfmanager.app.data.IncomingPdf
+import kotlin.concurrent.thread
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -27,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -44,13 +49,19 @@ class MainActivity : ComponentActivity() {
     /** The one library state of the app. Created once here and passed explicitly to the screens that need it. */
     private val libraryVm: LibraryViewModel by viewModels()
 
+    /** A PDF sent by another app, already copied into the cache. The screen opens it in the viewer and clears this. */
+    private var incomingPdf by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PDFBoxResourceLoader.init(applicationContext)
         com.pdfmanager.app.data.PrivacyCleanup.runOnce(applicationContext)
         val prefs = getSharedPreferences("ui", MODE_PRIVATE)
         PrintSessionStore.init(applicationContext)
+        applicationContext.let { app -> thread(name = "cache-cleanup") { runCatching { IncomingPdf.cleanup(app) } } }
         handlePrintIntent(intent)
+        // Only for a fresh start: after the system recreates the app the same intent must not open the file again
+        if (savedInstanceState == null) handleViewIntent(intent)
 
         setContent {
             var themeMode by remember { mutableIntStateOf(prefs.getInt("theme", ThemeMode.SYSTEM)) }
@@ -72,8 +83,12 @@ class MainActivity : ComponentActivity() {
             PdfManagerTheme(darkTheme = dark, dynamicColor = dynamic) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     val nav = rememberNavController()
-                    val open: (String) -> Unit = { nav.navigate("viewer/${Uri.encode(it)}") }
-                    val back: () -> Unit = { nav.popBackStack() }
+                    // A second tap while a screen is still opening must not stack the same screen twice
+                    val open: (String) -> Unit = { nav.navigate("viewer/${Uri.encode(it)}") { launchSingleTop = true } }
+                    // A second tap on Back while the screen is closing must not pop one screen too many
+                    val back: () -> Unit = {
+                        if (nav.currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED) nav.popBackStack()
+                    }
                     // Top-level switch: no new back-stack entries, and each tab keeps its own state
                     val switchTab: (String) -> Unit = { route ->
                         nav.navigate(route) {
@@ -84,7 +99,7 @@ class MainActivity : ComponentActivity() {
                     }
                     // Tools and quick actions may name a main-tab route (e.g. "scan"): treat it as a tab switch
                     val go: (String) -> Unit = { route ->
-                        if (MainTab.fromRoute(route) != null) switchTab(route) else nav.navigate(route)
+                        if (MainTab.fromRoute(route) != null) switchTab(route) else nav.navigate(route) { launchSingleTop = true }
                     }
                     // Before the first back-stack entry exists the start destination (Home) is current, so the bar does not pop in a frame late
                     val currentTab = MainTab.fromRoute(
@@ -102,6 +117,14 @@ class MainActivity : ComponentActivity() {
                                     launchSingleTop = true
                                 }
                             }
+                        }
+                    }
+                    // A PDF opened from another app ("Open with" / "Share")
+                    val incoming = incomingPdf
+                    LaunchedEffect(incoming) {
+                        if (incoming != null) {
+                            nav.navigate("viewer/${Uri.encode(incoming)}") { launchSingleTop = true }
+                            incomingPdf = null
                         }
                     }
                     val openPrint: (com.pdfmanager.app.data.PdfEntity) -> Unit = { pdf ->
@@ -205,6 +228,33 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handlePrintIntent(intent)
+        handleViewIntent(intent)
+    }
+
+    /** Opens a PDF that another app sent here with "Open with" (VIEW) or "Share" (SEND). */
+    private fun handleViewIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        val uri: Uri = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            else -> null
+        } ?: return
+        // Handled once: a later onCreate / onNewIntent with the same intent must not open it again
+        intent.action = Intent.ACTION_MAIN
+        intent.data = null
+        val app = applicationContext
+        thread(name = "incoming-pdf") {
+            val result = runCatching { IncomingPdf.copyToCache(app, uri) }
+            runOnUiThread {
+                result.onSuccess { incomingPdf = it }
+                    .onFailure {
+                        val msg = if (it.message == "Not a PDF file") "This is not a PDF file" else "Could not open this file"
+                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    }
+            }
+        }
     }
 
     private fun handlePrintIntent(intent: Intent?) {

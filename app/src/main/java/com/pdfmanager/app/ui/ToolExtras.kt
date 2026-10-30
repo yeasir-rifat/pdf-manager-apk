@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -115,7 +117,7 @@ fun RecentResults(refresh: Any?, matches: (String) -> Boolean, onOpen: (String) 
     }
 }
 
-/** Page count of the picked PDF, or null while unknown. */
+/** Page count of the picked PDF: null while it is being read, 0 when the file cannot be read (locked or damaged). */
 @Composable
 fun rememberPageCount(picked: Picked?): State<Int?> {
     val context = LocalContext.current
@@ -126,7 +128,7 @@ fun rememberPageCount(picked: Picked?): State<Int?> {
                     context.contentResolver.openFileDescriptor(p.uri, "r")?.use { fd ->
                         PdfRenderer(fd).use { it.pageCount }
                     }
-                }.getOrNull()
+                }.getOrNull() ?: 0
             }
         }
     }
@@ -136,13 +138,18 @@ private val paperText = Color(0xFF5F6368)
 private val paperLine = Color(0xFF9AA0A6)
 private val paperFill = Color(0xFFEDEFF2)
 
-/** A small drawing of one sheet with the chosen number of pages on it. */
+/** One sheet drawn with the real pages of the chosen PDF. Arrows step through the sheets. */
 @Composable
-fun NupPreview(layout: PdfLayout.NupLayout, border: Boolean, pages: Int?) {
+fun NupPreview(layout: PdfLayout.NupLayout, border: Boolean, pages: Int?, picked: Picked?) {
+    val sheets = pages?.let { (it + layout.perSheet - 1) / layout.perSheet }
+    var sheet by rememberSaveable { mutableIntStateOf(0) }
+    val current = if (sheets != null) sheet.coerceIn(0, sheets - 1) else 0
+    LaunchedEffect(picked?.uri) { sheet = 0 }
+
     OptionCard("Preview") {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            val sheetW = if (layout.landscape) 150.dp else 106.dp
-            val sheetH = if (layout.landscape) 106.dp else 150.dp
+            val sheetW = if (layout.landscape) 170.dp else 120.dp
+            val sheetH = if (layout.landscape) 120.dp else 170.dp
             Column(
                 Modifier.size(sheetW, sheetH).clip(RoundedCornerShape(6.dp)).background(Color.White).padding(5.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -150,11 +157,17 @@ fun NupPreview(layout: PdfLayout.NupLayout, border: Boolean, pages: Int?) {
                 for (r in 0 until layout.rows) {
                     Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         for (c in 0 until layout.cols) {
+                            val pageIndex = current * layout.perSheet + r * layout.cols + c
+                            val exists = pages == null || pageIndex < pages
                             val cell = Modifier.weight(1f).fillMaxHeight().let {
-                                if (border) it.border(1.dp, paperLine) else it.background(paperFill)
+                                if (border && exists) it.border(1.dp, paperLine) else it.background(paperFill)
                             }
                             Box(cell, contentAlignment = Alignment.Center) {
-                                Text("${r * layout.cols + c + 1}", color = paperText, style = MaterialTheme.typography.labelLarge)
+                                if (picked == null) {
+                                    Text("${r * layout.cols + c + 1}", color = paperText, style = MaterialTheme.typography.labelLarge)
+                                } else if (exists) {
+                                    NupPageThumb(picked, pageIndex)
+                                }
                             }
                         }
                     }
@@ -168,13 +181,51 @@ fun NupPreview(layout: PdfLayout.NupLayout, border: Boolean, pages: Int?) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    if (pages != null) "$pages pages make ${(pages + layout.perSheet - 1) / layout.perSheet} sheets"
+                    if (pages != null && sheets != null) "$pages pages make $sheets sheets"
                     else "Choose a PDF to see how many sheets you need",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
+        if (sheets != null && sheets > 1) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                IconButton(onClick = { sheet = current - 1 }, enabled = current > 0) {
+                    Icon(AppIcons.KeyboardArrowLeft, contentDescription = "Previous sheet")
+                }
+                Text("Sheet ${current + 1} of $sheets", style = MaterialTheme.typography.labelLarge)
+                IconButton(onClick = { sheet = current + 1 }, enabled = current < sheets - 1) {
+                    Icon(AppIcons.KeyboardArrowRight, contentDescription = "Next sheet")
+                }
+            }
+        }
+    }
+}
+
+/** The real page [pageIndex] of the PDF, drawn whole inside its cell. */
+@Composable
+private fun NupPageThumb(picked: Picked, pageIndex: Int) {
+    val context = LocalContext.current
+    val bitmap by produceState<android.graphics.Bitmap?>(null, picked.uri, pageIndex) {
+        value = com.pdfmanager.app.data.Thumbnails.load(
+            context, picked.uri, isPdf = true, widthPx = 300, heightPx = 0,
+            stamp = "nup", page = pageIndex
+        )
+    }
+    val bmp = bitmap
+    if (bmp != null) {
+        androidx.compose.foundation.Image(
+            bitmap = bmp.asImageBitmap(),
+            contentDescription = "Page ${pageIndex + 1}",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+        )
+    } else {
+        Text("${pageIndex + 1}", color = paperText, style = MaterialTheme.typography.labelLarge)
     }
 }
 

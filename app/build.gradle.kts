@@ -16,6 +16,30 @@ android {
         versionCode = 4
         versionName = "0.4"
     }
+    // One permanent key signs every release, so a new APK installs over the old one and keeps the user's data.
+    // The key comes from environment variables (GitHub Actions) or gradle properties (-PkeystoreFile=...).
+    // Without a keystore (a quick local build) the release APK falls back to the debug key and a warning is printed.
+    fun secret(env: String, prop: String): String? =
+        (System.getenv(env) ?: project.findProperty(prop)?.toString())?.takeIf { it.isNotBlank() }
+
+    val keystorePath = secret("KEYSTORE_FILE", "keystoreFile")
+    val keystorePassword = secret("KEYSTORE_PASSWORD", "keystorePassword")
+    val keyAliasName = secret("KEY_ALIAS", "keyAlias")
+    val keyPasswordValue = secret("KEY_PASSWORD", "keyPassword") ?: keystorePassword
+    val hasReleaseKey = keystorePath != null && file(keystorePath).isFile &&
+        keystorePassword != null && keyAliasName != null
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = keyAliasName
+                keyPassword = keyPasswordValue
+            }
+        }
+    }
+
     buildTypes {
         release {
             // R8 shrinks the code and resources (smaller and faster). If a feature ever breaks in the
@@ -24,8 +48,12 @@ android {
             isMinifyEnabled = r8
             isShrinkResources = r8
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Personal-use build: signed with the debug key so the APK installs without a keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseKey) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn("WARNING: no release keystore given, signing with the debug key. This APK cannot update an APK signed with another key.")
+                signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {
@@ -55,5 +83,7 @@ dependencies {
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+    // Office to PDF: AuthorizationClient (Google sign-in consent for the drive.file scope). Check for the newest stable version before building.
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
     testImplementation("junit:junit:4.13.2")
 }

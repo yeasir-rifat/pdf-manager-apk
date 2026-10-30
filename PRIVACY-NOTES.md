@@ -2,7 +2,7 @@
 
 ## Permissions
 - Print Framework ব্যবহারে নতুন কোনো permission লাগে না। USB, নেটওয়ার্ক বা storage permission যোগ করা হয়নি।
-- আগে থেকে থাকা permission (`MANAGE_EXTERNAL_STORAGE` লাইব্রেরিতে অন্য অ্যাপের PDF দেখার জন্য। OCR সরানোর পর `INTERNET` permission-ও বাদ দেওয়া হয়েছে, তাই অ্যাপ এখন ইন্টারনেট ব্যবহার করে না) এই ধাপে বদলানো হয়নি।
+- আগে থেকে থাকা permission (`MANAGE_EXTERNAL_STORAGE` লাইব্রেরিতে অন্য অ্যাপের PDF দেখার জন্য। OCR সরানোর পর `INTERNET` বাদ গিয়েছিল, কিন্তু Word/Excel/PowerPoint → PDF যোগ হওয়ায় ফিরে এসেছে; নিচে "Office → PDF" অংশ দেখুন) এই ধাপে বদলানো হয়নি।
 - Wi‑Fi printer খোঁজা configured Android print service করে। অ্যাপ নিজে নেটওয়ার্ক স্ক্যান করে না।
 - ধাপ ১৩-র পর: `POST_NOTIFICATIONS` (প্রিন্টের অগ্রগতি ও "কাগজ উল্টান" নোটিফিকেশন), `FOREGROUND_SERVICE` ও `FOREGROUND_SERVICE_DATA_SYNC` (অ্যাপ বন্ধ করলেও print job অনুসরণ) যোগ হয়েছে। নোটিফিকেশন অনুমতি না দিলেও প্রিন্ট চলে, শুধু নোটিফিকেশন দেখা যায় না।
 - Raw USB printing নেই, তাই USB host permission-ও নেই।
@@ -26,3 +26,10 @@
 ## যা অ্যাপের হাতের বাইরে
 - ফাইলের নাম print job-এর নাম হিসেবে Android print service ও print notification-এ যায়। PDF-এর বিষয়বস্তু print service-এ যায়, তাই প্রিন্টে কী হয় তা ওই service ও printer নির্মাতার নীতির ওপর নির্ভর করে।
 - Library-র URI অ্যাপের নিজস্ব scan থেকে আসে। Document picker-এর URI শুধু ঐ টুলের সময়ের জন্য বৈধ; permission হারালে Print স্ক্রিন "Can't print this PDF" দেখায়।
+
+# Office → PDF: Word, Excel, PowerPoint (পরিকল্পনা M1)
+- `INTERNET` permission ফিরে এসেছে। অ্যাপ নেটওয়ার্ক **শুধু** এই তিন টুলে "Convert" চাপলে ব্যবহার করে; অন্য কোনো টুল ইন্টারনেট ছোঁয় না।
+- ফাইল TLS-এ ইউজারের **নিজের** Google Drive-এ সাময়িক আপলোড হয়, Google সেখানে PDF করে, তারপর ফাইল স্থায়ীভাবে মোছা হয়। অ্যাপের নিজস্ব কোনো সার্ভার নেই।
+- OAuth scope শুধু `drive.file`: অ্যাপ নিজে যে ফাইল বানায় কেবল সেটুকুই দেখতে পারে, ইউজারের অন্য কোনো Drive ফাইল নয়।
+- Drive-এ ফাইলের নাম আসল নাম নয় (`pdfm-temp-…`)। access token শুধু মেমোরিতে থাকে, কোথাও সেভ হয় না।
+- এই অংশ পরিকল্পনা অনুযায়ী ধাপে ধাপে যোগ হচ্ছে; এখন (M2) পর্যন্ত আছে: `INTERNET`, লজিক-ফাইল ও Google অনুমতির কোড (`GoogleDriveAuth`)। আপলোড/কনভার্ট কোড এখনো নেই। অনুমতি তুলে নিতে: myaccount.google.com/permissions।

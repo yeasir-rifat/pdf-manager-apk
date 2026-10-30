@@ -93,6 +93,10 @@ object PdfCompressor {
             return "No images could be reduced. PDFs that are mostly text are already compact."
         }
         val newSize = counter.count
+        if (originalSize > 0 && newSize >= originalSize) {
+            return "The new file (${Formatter.formatFileSize(context, newSize)}) is not smaller than the original " +
+                "(${Formatter.formatFileSize(context, originalSize)}). Try a stronger setting or keep the original."
+        }
         val saved = if (originalSize > 0) ((1 - newSize.toDouble() / originalSize) * 100).toInt() else 0
         return "Reduced from ${Formatter.formatFileSize(context, originalSize)} to " +
             "${Formatter.formatFileSize(context, newSize)} (-$saved%). Optimized $replaced of $total images."
@@ -227,6 +231,26 @@ object PdfLayout {
         NupLayout(6, 3, 2, true),
         NupLayout(9, 3, 3, false)
     )
+
+    /** Pages-per-sheet counts offered by the tool. */
+    val nupCounts = listOf(2, 4, 6, 9)
+
+    /** The sheet direction that fits each count best. The tool lets the person change it. */
+    fun defaultLandscape(perSheet: Int): Boolean = perSheet != 9
+
+    /**
+     * Grid for [perSheet] pages on a sheet of the chosen direction.
+     * Landscape sheets get more columns than rows, portrait sheets get more rows than columns.
+     */
+    fun nupLayout(perSheet: Int, landscape: Boolean): NupLayout {
+        val (long, short) = when (perSheet) {
+            2 -> 2 to 1
+            4 -> 2 to 2
+            6 -> 3 to 2
+            else -> 3 to 3
+        }
+        return if (landscape) NupLayout(perSheet, long, short, true) else NupLayout(perSheet, short, long, false)
+    }
 
     private const val A4_W = 595f
     private const val A4_H = 842f

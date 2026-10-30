@@ -5,6 +5,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -66,7 +67,7 @@ private fun pluralPages(n: Int) = if (n == 1) "1 page" else "$n pages"
 fun SplitScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val pagesState = rememberPageCount(picked)
     val pages = pagesState.value
     var mode by remember { mutableIntStateOf(0) }
@@ -137,7 +138,7 @@ fun SplitScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun ExtractDeleteScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val pages = rememberPageCount(picked).value
     var keepMode by remember { mutableStateOf(true) }
     var selected by remember(picked) { mutableStateOf(emptySet<Int>()) }
@@ -197,7 +198,7 @@ fun ExtractDeleteScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun ReorderScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val pages = rememberPageCount(picked).value
     val total = pages ?: 0
     val order = remember(picked, total) { mutableStateListOf<Int>().apply { addAll(0 until total) } }
@@ -251,7 +252,7 @@ fun ReorderScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 fun BlankPageScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val pages = rememberPageCount(picked).value
     val total = pages ?: 0
     var selected by remember(picked) { mutableStateOf(emptySet<Int>()) }

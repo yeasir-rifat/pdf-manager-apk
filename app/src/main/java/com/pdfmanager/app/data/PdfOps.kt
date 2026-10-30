@@ -122,7 +122,7 @@ object PdfOps {
                         )
                         bmp.eraseColor(Color.WHITE)
                         page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        val name = "%s_page_%03d.jpg".format(baseName, i + 1)
+                        val name = String.format(java.util.Locale.US, "%s_page_%03d.jpg", baseName, i + 1)
                         OutputStore.saveImage(context, name, "image/jpeg") { os ->
                             bmp.compress(Bitmap.CompressFormat.JPEG, 95, os)
                         }
@@ -209,6 +209,50 @@ object PdfOps {
                 doc.save(out)
             }
         }
+    }
+
+    /** True when the file needs a password just to be opened (a file with only an owner password opens freely). */
+    fun needsPassword(context: Context, uri: Uri): Boolean = try {
+        open(context, uri).use { load(it).close() }
+        false
+    } catch (e: InvalidPasswordException) {
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    private const val UNLOCKED_DIR = "view-unlocked"
+    private const val UNLOCKED_MAX_AGE_MS = 2L * 60 * 60 * 1000
+
+    /**
+     * Opens a password-protected PDF with [password] and saves a copy without the password to the app's private
+     * cache, so the viewer can show it. The original is never changed. Throws IllegalStateException("Wrong password").
+     * Copies older than two hours are removed on the next call and when the app starts.
+     */
+    fun unlockForViewing(context: Context, uri: Uri, password: String): java.io.File {
+        val dir = java.io.File(context.cacheDir, UNLOCKED_DIR).apply { mkdirs() }
+        cleanupUnlocked(context)
+        val target = java.io.File.createTempFile("view-", ".pdf", dir)
+        try {
+            open(context, uri).use { input ->
+                load(input, password).use { doc ->
+                    doc.setAllSecurityToBeRemoved(true)
+                    java.io.FileOutputStream(target).use { doc.save(it) }
+                }
+            }
+        } catch (e: InvalidPasswordException) {
+            target.delete()
+            throw IllegalStateException("Wrong password")
+        } catch (e: Throwable) {
+            target.delete()
+            throw e
+        }
+        return target
+    }
+
+    fun cleanupUnlocked(context: Context) {
+        val limit = System.currentTimeMillis() - UNLOCKED_MAX_AGE_MS
+        java.io.File(context.cacheDir, UNLOCKED_DIR).listFiles()?.forEach { if (it.lastModified() < limit) runCatching { it.delete() } }
     }
 
     fun unlock(context: Context, uri: Uri, out: OutputStream, password: String) {

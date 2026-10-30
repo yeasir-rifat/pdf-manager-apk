@@ -146,11 +146,6 @@ fun ScanScreen(onBack: (() -> Unit)?, onOpen: (String) -> Unit) {
             }
             Column {
                 Text("Scan to PDF", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    "Turn paper into a clean PDF in seconds",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant
-                )
             }
         }
 

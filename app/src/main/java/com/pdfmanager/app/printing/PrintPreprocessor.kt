@@ -2,19 +2,22 @@ package com.pdfmanager.app.printing
 
 import android.content.Context
 import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.Color
+import com.pdfmanager.app.data.MarkArt
 import com.pdfmanager.app.data.PdfLayout
 import com.pdfmanager.app.data.PdfOps
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
+import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.util.Matrix
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.sin
 
 /**
  * Step 9. Builds a temporary PDF for printing when the user asked for something the Android
@@ -40,6 +43,7 @@ object PrintPreprocessor {
     /** Folder name inside the app cache that holds the temporary print PDFs. */
     const val TEMP_DIR = "print-tmp"
     private const val STALE_AFTER_MS = 6L * 60 * 60 * 1000
+    private const val MAX_WATERMARK_HEIGHT = 170f
 
     fun prepare(
         context: Context,
@@ -231,7 +235,20 @@ object PrintPreprocessor {
         }
         val total = doc.numberOfPages
         if (watermark.isNotEmpty() || pageNumbers) {
-            for (i in 0 until total) drawMarks(doc, doc.getPage(i), i + 1, total, watermark, pageNumbers)
+            // The watermark is drawn by Android itself as a picture, so every script (Bangla included) works.
+            // The built-in PDF fonts only know plain English letters.
+            var bitmap: Bitmap? = null
+            try {
+                var art: PDImageXObject? = null
+                if (watermark.isNotEmpty()) {
+                    val bmp = MarkArt.text(watermark, Color.rgb(115, 115, 115))
+                    bitmap = bmp
+                    art = LosslessFactory.createFromImage(doc, bmp)
+                }
+                for (i in 0 until total) drawMarks(doc, doc.getPage(i), i + 1, total, art, pageNumbers)
+            } finally {
+                bitmap?.recycle()
+            }
         }
         FileOutputStream(target).use { out ->
             doc.save(out)
@@ -240,7 +257,7 @@ object PrintPreprocessor {
         return total
     }
 
-    private fun drawMarks(doc: PDDocument, page: PDPage, number: Int, total: Int, watermark: String, pageNumbers: Boolean) {
+    private fun drawMarks(doc: PDDocument, page: PDPage, number: Int, total: Int, art: PDImageXObject?, pageNumbers: Boolean) {
         val box = page.cropBox
         val w = box.width
         val h = box.height
@@ -258,27 +275,22 @@ object PrintPreprocessor {
         }
         // resetContext = true wraps the page's own drawing in q/Q so our transform starts clean.
         PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
-            if (watermark.isNotEmpty()) {
-                val font = PDType1Font.HELVETICA_BOLD
-                val unitWidth = font.getStringWidth(watermark) / 1000f
-                val size = min(120f, min(seenW, seenH) * 1.2f / unitWidth).coerceAtLeast(8f)
-                val textWidth = unitWidth * size
-                val angle = Math.toRadians(45.0)
-                val c = cos(angle).toFloat()
-                val s = sin(angle).toFloat()
-                val dx = -textWidth / 2f
-                val dy = -size * 0.3f
-                val ox = seenW / 2f + dx * c - dy * s
-                val oy = seenH / 2f + dx * s + dy * c
+            if (art != null) {
+                val aspect = art.width.toFloat() / art.height.toFloat()
+                // Up to 1.2x the shorter side of the page along the diagonal, but never taller than a 120 pt text line.
+                var drawW = min(seenW, seenH) * 1.2f
+                var drawH = drawW / aspect
+                if (drawH > MAX_WATERMARK_HEIGHT) {
+                    drawH = MAX_WATERMARK_HEIGHT
+                    drawW = drawH * aspect
+                }
+                val gs = PDExtendedGraphicsState().also { it.nonStrokingAlphaConstant = 0.25f }
                 cs.saveGraphicsState()
                 cs.transform(toPage)
-                cs.setGraphicsStateParameters(PDExtendedGraphicsState().also { it.setNonStrokingAlphaConstant(0.25f) })
-                cs.setNonStrokingColor(0.45f, 0.45f, 0.45f)
-                cs.beginText()
-                cs.setFont(font, size)
-                cs.setTextMatrix(Matrix(c, s, -s, c, ox, oy))
-                cs.showText(watermark)
-                cs.endText()
+                cs.setGraphicsStateParameters(gs)
+                cs.transform(Matrix.getTranslateInstance(seenW / 2f, seenH / 2f))
+                cs.transform(Matrix.getRotateInstance(Math.toRadians(45.0), 0f, 0f))
+                cs.drawImage(art, -drawW / 2f, -drawH / 2f, drawW, drawH)
                 cs.restoreGraphicsState()
             }
             if (pageNumbers) {

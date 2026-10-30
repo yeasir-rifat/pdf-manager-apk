@@ -14,6 +14,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.geometry.Size
 import android.widget.Toast
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.tom_roush.pdfbox.text.TextPosition
@@ -165,7 +171,10 @@ class PdfHolder(context: Context, uri: Uri) {
     private val appContext = context.applicationContext
     private val srcUri = uri
     private val fd: ParcelFileDescriptor? = context.contentResolver.openFileDescriptor(uri, "r")
-    private val renderer: PdfRenderer? = fd?.let { PdfRenderer(it) }
+    private val renderer: PdfRenderer? = fd?.let {
+        // PdfRenderer refuses password-protected or damaged files; do not leak the descriptor then
+        try { PdfRenderer(it) } catch (e: Throwable) { runCatching { it.close() }; throw e }
+    }
     private val mutex = Mutex()
     val pageCount: Int = renderer?.pageCount ?: 0
 
@@ -349,6 +358,39 @@ private sealed interface PageState {
     class Ready(val bitmap: Bitmap) : PageState
 }
 
+/** Asks for the password of a locked PDF. The text is hidden and can be shown with the eye button. */
+@Composable
+private fun PasswordDialog(error: String?, busy: Boolean, onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
+    var password by remember { mutableStateOf("") }
+    var visible by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Enter password") },
+        text = {
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                singleLine = true,
+                enabled = !busy,
+                isError = error != null,
+                supportingText = error?.let { { Text(it) } },
+                visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { if (password.isNotEmpty() && !busy) onSubmit(password) }),
+                trailingIcon = {
+                    TextButton(onClick = { visible = !visible }) { Text(if (visible) "Hide" else "Show") }
+                }
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(password) }, enabled = password.isNotEmpty() && !busy) {
+                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Open")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String) -> Unit = { _, _ -> }) {
@@ -358,14 +400,29 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
     // Open the file off the main thread so the screen appears immediately
     var holder by remember(uriString) { mutableStateOf<PdfHolder?>(null) }
     var openFailed by remember(uriString) { mutableStateOf(false) }
-    LaunchedEffect(uriString) {
+    // A password-protected file is unlocked into a private temporary copy, and the viewer then shows that copy
+    var openUri by remember(uriString) { mutableStateOf(uriString) }
+    var needsPassword by remember(uriString) { mutableStateOf(false) }
+    var passwordDialog by remember(uriString) { mutableStateOf(false) }
+    var passwordError by remember(uriString) { mutableStateOf<String?>(null) }
+    var unlocking by remember(uriString) { mutableStateOf(false) }
+    LaunchedEffect(openUri) {
         val h = withContext(Dispatchers.IO) {
-            runCatching { PdfHolder(context, Uri.parse(uriString)) }.getOrNull()
+            runCatching { PdfHolder(context, Uri.parse(openUri)) }.getOrNull()
         }
         if (h == null || h.pageCount == 0) {
             h?.close()
-            openFailed = true
-        } else holder = h
+            val locked = openUri == uriString &&
+                withContext(Dispatchers.IO) { PdfOps.needsPassword(context, Uri.parse(uriString)) }
+            if (locked) {
+                needsPassword = true
+                passwordDialog = true
+            } else openFailed = true
+        } else {
+            holder = h
+            needsPassword = false
+            passwordDialog = false
+        }
     }
     DisposableEffect(uriString) { onDispose { holder?.close() } }
     LaunchedEffect(holder) { holder?.loadSizes() }
@@ -469,7 +526,7 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                             DropdownMenuItem(
                                 text = { Text("Print") },
                                 leadingIcon = { Icon(AppIcons.Print, null) },
-                                onClick = { moreMenu = false; onPrint(uriString, title) }
+                                onClick = { moreMenu = false; onPrint(openUri, title) }
                             )
                             DropdownMenuItem(
                                 text = { Text("Zoom in") },
@@ -501,9 +558,40 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
             openFailed -> EmptyState(
                 icon = AppIcons.ErrorOutline,
                 title = "Can't open this PDF",
-                message = "It may be locked or damaged. If it has a password, use Unlock PDF in Tools first.",
+                message = "The file may be damaged or in a format this app cannot show.",
                 modifier = Modifier.padding(padding)
             )
+            needsPassword -> {
+                EmptyState(
+                    icon = AppIcons.Lock,
+                    title = "This PDF is locked",
+                    message = "Enter its password to read it. The original file is not changed.",
+                    modifier = Modifier.padding(padding),
+                    action = { Button(onClick = { passwordError = null; passwordDialog = true }) { Text("Enter password") } }
+                )
+                if (passwordDialog) {
+                    PasswordDialog(
+                        error = passwordError,
+                        busy = unlocking,
+                        onDismiss = { if (!unlocking) passwordDialog = false },
+                        onSubmit = { pw ->
+                            scope.launch {
+                                unlocking = true
+                                passwordError = null
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching { PdfOps.unlockForViewing(context, Uri.parse(uriString), pw) }
+                                }
+                                unlocking = false
+                                result.onSuccess { openUri = Uri.fromFile(it).toString() }
+                                    .onFailure {
+                                        passwordError = if (it.message == "Wrong password") "Wrong password. Try again."
+                                        else "Could not open this file."
+                                    }
+                            }
+                        }
+                    )
+                }
+            }
             h == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
             }

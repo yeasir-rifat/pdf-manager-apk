@@ -10,15 +10,14 @@ object PrintTransform {
     const val MAX_COPIES = 99
 
     /**
-     * Watermarks use the built-in Helvetica font, which can only draw plain English letters,
-     * digits and common symbols. Returns an error message, or null when the text is fine
-     * (blank text is fine: it means no watermark).
+     * The watermark is drawn by Android as a picture, so any script (Bangla included) works.
+     * Returns an error message, or null when the text is fine (blank text is fine: it means no watermark).
      */
     fun watermarkError(text: String): String? {
         val t = text.trim()
         if (t.isEmpty()) return null
         if (t.length > MAX_WATERMARK_LENGTH) return "Use at most $MAX_WATERMARK_LENGTH characters"
-        if (t.any { it.code < 0x20 || it.code > 0x7E }) return "Use English letters, numbers and symbols only"
+        if (t.any { it.isISOControl() }) return "Use a single line of text without special characters"
         return null
     }
 

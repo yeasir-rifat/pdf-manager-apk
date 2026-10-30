@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -99,8 +100,9 @@ fun SignScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
-    val pages = rememberPageCount(picked).value ?: 0
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
+    val pageCount = rememberPageCount(picked).value
+    val pages = pageCount ?: 0
     var page by remember(picked) { mutableIntStateOf(0) }
     val strokes = remember { mutableStateListOf<List<Offset>>() }
     var live by remember { mutableStateOf<List<Offset>>(emptyList()) }
@@ -114,6 +116,7 @@ fun SignScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 
     ToolScaffold("Sign PDF", onBack) {
         PdfPickerButton(picked) { picked = it }
+        PagesState(picked, pageCount)
         OptionCard("Draw your signature") {
             Box(
                 Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(14.dp)).background(Color.White)
@@ -214,8 +217,9 @@ fun HighlightNotesScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    var picked by remember { mutableStateOf(ToolInput.takeFirst()) }
-    val pages = rememberPageCount(picked).value ?: 0
+    var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
+    val pageCount = rememberPageCount(picked).value
+    val pages = pageCount ?: 0
     var page by remember(picked) { mutableIntStateOf(0) }
     var noteMode by remember { mutableStateOf(false) }
     var colorIdx by remember { mutableIntStateOf(0) }
@@ -249,6 +253,7 @@ fun HighlightNotesScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 
     ToolScaffold("Highlight / Notes", onBack) {
         PdfPickerButton(picked) { picked = it }
+        PagesState(picked, pageCount)
         val p = picked
         if (p != null && pages > 0) {
             ChipRow(listOf(false to "Highlight", true to "Note"), noteMode) { noteMode = it }
