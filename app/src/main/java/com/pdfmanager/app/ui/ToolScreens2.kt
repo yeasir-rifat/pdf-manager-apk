@@ -102,6 +102,7 @@ fun CompressScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             }
         })
         JobStatus(job, onOpen)
+        RecentResults(job.result, { it.startsWith("Compressed_") }, onOpen)
     }
 }
 
