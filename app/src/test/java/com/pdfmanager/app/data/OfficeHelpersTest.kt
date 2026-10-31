@@ -182,4 +182,16 @@ class OfficeHelpersTest {
     @Test fun kindsHaveShortPrefixes() {
         assertArrayEquals(arrayOf("Word", "Excel", "Slides"), OfficeKind.values().map { it.prefix }.toTypedArray())
     }
+
+    // ------------------------------------------------------------ result message
+
+    @Test fun resultMessageSaysPagesAndDriveCopy() {
+        assertEquals("Created a PDF with 3 pages. Saved in Documents/PDF Manager", OfficeHelpers.resultMessage(3, true))
+        assertEquals("Created a PDF with 1 page. Saved in Documents/PDF Manager", OfficeHelpers.resultMessage(1, true))
+        assertEquals("Done. Saved in Documents/PDF Manager", OfficeHelpers.resultMessage(0, true))
+        assertEquals(
+            "Created a PDF with 2 pages. Saved in Documents/PDF Manager. The temporary Drive copy will be removed later",
+            OfficeHelpers.resultMessage(2, false),
+        )
+    }
 }

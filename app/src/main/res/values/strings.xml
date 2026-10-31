@@ -32,6 +32,9 @@
     <string name="tool_img2pdf">Image to PDF</string>
     <string name="tool_scan">Scan to PDF</string>
     <string name="tool_text2pdf">Text to PDF</string>
+    <string name="tool_word2pdf">Word to PDF</string>
+    <string name="tool_excel2pdf">Excel to PDF</string>
+    <string name="tool_ppt2pdf">PPT to PDF</string>
     <string name="tool_pdf2img">PDF to Image</string>
     <string name="tool_pdf2text">PDF to Text</string>
     <string name="tool_extractimg">Get images</string>

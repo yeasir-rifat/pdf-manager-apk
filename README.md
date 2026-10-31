@@ -44,6 +44,16 @@ Kotlin + Jetpack Compose, PDFBox-Android, Room। নতুন সব টুল 
 - [x] **Repair PDF** — Quick fix (পুরো ফাইল নতুন করে লেখা) অথবা Rebuild pages (পেজ ধরে ধরে নতুন ফাইলে)
 - [x] **Library search** — সব PDF-এর ভেতরের লেখায় খোঁজা (আলাদা Room ডাটাবেস `pdf_text.db`, নিচের নোট দেখুন)
 
+### Office → PDF (Word, Excel, PowerPoint — ইউজারের নিজের Google Drive দিয়ে)
+পরিকল্পনা: `README-OFFICE-TO-PDF.md`। মাইলস্টোন ধরে ধরে যোগ হচ্ছে; তিনটি টুল এখন Convert to PDF গ্রুপে দেখা যায়।
+- [x] **M1** — `OfficeHelpers` (খাঁটি লজিক), `INTERNET` permission, ডিপেন্ডেন্সি
+- [x] **M2** — `GoogleDriveAuth` + `DriveAuthUi` (drive.file অনুমতি, টোকেন শুধু মেমোরিতে)
+- [x] **M3** — `DriveClient` (resumable আপলোড+কনভার্ট, PDF এক্সপোর্ট, মোছা, মার্কার-খোঁজা), `DriveTempJournal` + `DriveLeftovers`, `OfficeConvert` ইঞ্জিন
+- [x] **M4** — `OfficeScreens.kt` (একটি স্ক্রিন, ৩টি রুট: `word2pdf`, `excel2pdf`, `ppt2pdf`), `ToolCatalog` ২৭টি টুল, strings (en+bn), ৩টি আইকন, প্রথমবারের সম্মতি-ডায়ালগ, Settings-এ "Google Drive" অংশ
+- [x] **M5** — টাইমআউটের আলাদা বার্তা, অ্যাপ-চালুতে নিঃশব্দ পুনঃচেষ্টা (`PrivacyCleanup` → `OfficeConvert.retryLeftovers`), Settings-এ "Remove leftover temp files" (`DriveLeftovers.sweepAll`); WorkManager নেওয়া হয়নি
+- [~] **M6** — কোড-রিভিউ ও যাচাই-নির্দেশিকা হয়েছে (`OFFICE-TO-PDF-VERIFY.md`); কম্পাইল/টেস্ট/R8/ডিভাইস পরীক্ষা এখনো বাকি (CI-তে চালাতে হবে)
+- [~] **M7** — ডকুমেন্টেশন চূড়ান্ত (এই README, `PRIVACY-NOTES.md`, নিচের "Office → PDF রিলিজ চেকলিস্ট"); `versionCode`/`versionName` বাড়ানো, OAuth publishing status ও `v*` ট্যাগ বাকি, কারণ এগুলো M6 (CI সবুজ + ডিভাইস পরীক্ষা) শেষ হওয়ার পর
+
 ### ধাপ ৫ — পরীক্ষা
 - [ ] `TEST-CHECKLIST.md`-এ নতুন টুলগুলোর চেকলিস্ট
 - [ ] `PageRangeParser`-এর মতো নতুন লজিকের ইউনিট টেস্ট
@@ -110,10 +120,32 @@ Kotlin + Jetpack Compose, PDFBox-Android, Room। নতুন সব টুল 
 | `ui/UtilityScreens.kt` | Metadata ও Repair PDF স্ক্রিন |
 | `LibraryViewModel.kt` | নাম + ভেতরের লেখায় সার্চ, ইনডেক্স চালু/বন্ধ |
 | `res/xml/backup_rules.xml`, `data_extraction_rules.xml` | `pdf_text.db` ব্যাকআপ থেকে বাদ |
+| `data/OfficeHelpers.kt` | Office→PDF: ধরন, ম্যাজিক-বাইট, আকার, নাম, ত্রুটি-বার্তা, ব্যাকঅফ, ফলাফলের বার্তা (খাঁটি লজিক) |
+| `data/GoogleDriveAuth.kt`, `ui/DriveAuthUi.kt` | Google অনুমতি (`AuthorizationClient`, scope `drive.file`) |
+| `data/DriveJson.kt` | Drive উত্তর পড়ার ছোট JSON পার্সার (`org.json` নয়, তাই ইউনিট টেস্টে চলে) |
+| `data/DriveClient.kt` | `HttpURLConnection`-এ Drive কল: আপলোড+কনভার্ট, export, delete, মার্কার-খোঁজা; ৩ বার চেষ্টা, `401`-এ একবার নতুন টোকেন |
+| `data/DriveTempJournal.kt` | অস্থায়ী Drive ফাইলের জার্নাল (`noBackupFilesDir`-এ, ব্যাকআপে যায় না) ও `DriveLeftovers` (পরের বার মোছা) |
+| `ui/OfficeScreens.kt` | Word/Excel/PowerPoint to PDF-এর শেয়ার্ড স্ক্রিন (`OfficeToPdfScreen(kind, …)`), সম্মতি-ডায়ালগ |
+| `data/OfficeConvert.kt` | Office→PDF ইঞ্জিন; অস্থায়ী PDF `cache/office-tmp`-এ |
 | `MainActivity.kt` | রুট যোগ (`pdf2text`, `extractimg`, `text2pdf`, `metadata`, `repair`) |
 | `ui/ToolScreens.kt` | টুলস হোম গ্রুপ |
 
 ## বিল্ড
+
+### Office → PDF রিলিজ চেকলিস্ট
+
+এই ক্রমে এগোন। আগের ধাপ শেষ না হলে পরেরটায় যাবেন না।
+
+1. **CI সবুজ:** `main`-এ push করে Actions রান দিন। "Build debug APK" লাল হলে লগের `e: file:///…kt:<লাইন>` লাইনগুলো পাঠান। টেস্ট ধাপও সবুজ হতে হবে (`gradle :app:testDebugUnitTest`)।
+2. **Google Cloud (একবারের কাজ):** নতুন প্রজেক্ট, Google Drive API চালু, consent screen (External, শুধু `drive.file`), তারপর Android OAuth client: package `com.pdfmanager.app` ও **release keystore-এর SHA-1**। বিস্তারিত `README-OFFICE-TO-PDF.md` §৬। কোডে বা Gradle-এ কোনো client ID/secret বসে না।
+3. **ডিভাইস পরীক্ষা:** `KEYSTORE_BASE64` secret সেট করে বানানো release APK দিয়ে `TEST-CHECKLIST.md`-এর O1 থেকে O20 চালান, অন্তত দুটি Android সংস্করণে (একটি 8/9, একটি 13+)। CI-র debug APK-তে Google অনুমতি কাজ করে না। R8 বিল্ড ভাঙলে `-PnoR8` বিল্ডের সঙ্গে তুলনা করুন।
+4. **OAuth publishing status বাছুন:**
+   - *Testing:* শুধু নিজের অ্যাকাউন্ট test user, কোনো যাচাই লাগে না, তবে অনুমতি ৭ দিনে মেয়াদ হারাতে পারে।
+   - *In production:* `drive.file` non-sensitive scope, তাই সাধারণত পূর্ণ verification লাগে না; "unverified app" সতর্কতা আসে কি না ও privacy policy URL লাগে কি না Console-এ দেখে নিন। অন্য মানুষকে দিলে এটিই বেছে নিন।
+5. **সংস্করণ:** `app/build.gradle.kts`-এ `versionCode`/`versionName` বাড়ান (এখন 4 / 0.4)।
+6. **রিলিজ:** `git tag v<সংস্করণ>` ও `git push --tags`। CI স্থায়ী keystore দিয়ে সই করা APK বানায়। keystore হারালে বা বদলালে SHA-1 বদলায় এবং Google অনুমতি অচল হয়, তখন নতুন SHA-1 দিয়ে আবার OAuth client বানাতে হবে।
+
+**জেনে রাখুন:** Excel-এর পেজ লেআউট Drive API থেকে নিয়ন্ত্রণ করা যায় না; এক্সপোর্ট করা PDF ১০ MB ছাড়ালে Google ব্যর্থ করে; Google Play services লাগে; ইন্টারনেট ও Google অ্যাকাউন্ট লাগে। পূর্ণ তালিকা `README-OFFICE-TO-PDF.md` §৩।
 
 `./gradlew assembleDebug` — আমার এখানে অ্যান্ড্রয়েড SDK নেই, তাই অ্যাপের কোড কম্পাইল করে দেখা হয়নি। শুধু Android-মুক্ত লজিক (`ConvertHelpers`, `PageRangeParser`) আলাদা কম্পাইল করে তাদের ইউনিট টেস্ট চালানো হয়েছিল। ধাপ ৪-এ সেটাও করা যায়নি (এই পরিবেশে Kotlin কম্পাইলার নেই), তাই ধাপ ৪-এর কোড ও `SearchHelpersTest`/`UtilityHelpersTest` কোনোটাই এখনো চালানো হয়নি। CI (`.github/workflows/build-apk.yml`) বা Android Studio-তে বিল্ড করে কম্পাইল এরর থাকলে জানালে ঠিক করে দেব।
 

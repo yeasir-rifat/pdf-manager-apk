@@ -10,13 +10,13 @@ class ToolCatalogTest {
     private val registeredToolRoutes = setOf(
         "merge", "img2pdf", "pdf2img", "pdf2text", "extractimg", "text2pdf", "croprotate", "lock", "scan",
         "compress", "nup", "booklet", "split", "extract", "reorder", "blank", "watermark", "pagenum",
-        "sign", "notes", "resize", "poster", "metadata", "repair"
+        "sign", "notes", "resize", "poster", "metadata", "repair", "word2pdf", "excel2pdf", "ppt2pdf"
     )
 
-    @Test fun has_all_24_tools_exactly_once() {
-        assertEquals(24, ToolCatalog.all.size)
-        assertEquals(24, ToolCatalog.all.map { it.id }.toSet().size)
-        assertEquals(24, ToolCatalog.all.map { it.route }.toSet().size)
+    @Test fun has_all_27_tools_exactly_once() {
+        assertEquals(27, ToolCatalog.all.size)
+        assertEquals(27, ToolCatalog.all.map { it.id }.toSet().size)
+        assertEquals(27, ToolCatalog.all.map { it.route }.toSet().size)
     }
 
     @Test fun every_route_is_a_registered_destination() {
@@ -34,7 +34,7 @@ class ToolCatalogTest {
         val picked = ToolCatalog.all.filter { it.id == "lock" || it.id == "merge" }
         val groups = ToolCatalog.groupByCategory(picked)
         assertEquals(listOf(ToolCategory.ORGANIZE, ToolCategory.PROTECT), groups.map { it.first })
-        assertEquals(24, ToolCatalog.grouped.sumOf { it.second.size })
+        assertEquals(27, ToolCatalog.grouped.sumOf { it.second.size })
     }
 
     @Test fun search_matches_name_and_category_words() {

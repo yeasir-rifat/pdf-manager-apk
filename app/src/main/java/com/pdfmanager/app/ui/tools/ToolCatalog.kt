@@ -49,6 +49,9 @@ object ToolCatalog {
         ToolDef("img2pdf", R.string.tool_img2pdf, AppIcons.Image, "img2pdf", ToolCategory.TO_PDF),
         ToolDef("scan", R.string.tool_scan, AppIcons.DocumentScanner, "scan", ToolCategory.TO_PDF),
         ToolDef("text2pdf", R.string.tool_text2pdf, AppIcons.TextFields, "text2pdf", ToolCategory.TO_PDF),
+        ToolDef("word2pdf", R.string.tool_word2pdf, AppIcons.WordFile, "word2pdf", ToolCategory.TO_PDF),
+        ToolDef("excel2pdf", R.string.tool_excel2pdf, AppIcons.SheetFile, "excel2pdf", ToolCategory.TO_PDF),
+        ToolDef("ppt2pdf", R.string.tool_ppt2pdf, AppIcons.SlidesFile, "ppt2pdf", ToolCategory.TO_PDF),
         // Convert from PDF
         ToolDef("pdf2img", R.string.tool_pdf2img, AppIcons.PhotoLibrary, "pdf2img", ToolCategory.FROM_PDF),
         ToolDef("pdf2text", R.string.tool_pdf2text, AppIcons.Description, "pdf2text", ToolCategory.FROM_PDF),

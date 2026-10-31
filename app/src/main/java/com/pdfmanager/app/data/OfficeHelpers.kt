@@ -131,6 +131,19 @@ object OfficeHelpers {
     /** Name used inside the user's Drive: neutral, so the real file name never leaves the phone. */
     fun neutralDriveName(randomPart: String): String = "pdfm-temp-$randomPart"
 
+    /**
+     * Text shown when a conversion finished. [pages] is 0 when the page count could not be read.
+     * [driveCopyRemoved] false means the temporary Drive copy could not be deleted yet and will be later.
+     */
+    fun resultMessage(pages: Int, driveCopyRemoved: Boolean): String {
+        val head = if (pages > 0) {
+            "Created a PDF with ${if (pages == 1) "1 page" else "$pages pages"}. Saved in Documents/PDF Manager"
+        } else {
+            "Done. Saved in Documents/PDF Manager"
+        }
+        return if (driveCopyRemoved) head else "$head. The temporary Drive copy will be removed later"
+    }
+
     // ------------------------------------------------------------ errors
 
     /** User-facing message for a failed Google request. Never contains tokens, file names or the server's own text. */

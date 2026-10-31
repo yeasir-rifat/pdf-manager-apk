@@ -1,5 +1,7 @@
 package com.pdfmanager.app.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,9 +25,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -33,6 +39,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pdfmanager.app.LibraryViewModel
 import com.pdfmanager.app.R
 import com.pdfmanager.app.SortMode
+import com.pdfmanager.app.data.ConvertHelpers
+import com.pdfmanager.app.data.OfficeConvert
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Settings tab. It changes the same stored preferences the rest of the app already uses:
@@ -102,6 +114,57 @@ fun SettingsScreen(
                     description = "After a tool finishes, ask what to call the new file",
                     checked = askName.value,
                     onChange = { askName.value = it; NamePref.set(ctx, it) }
+                )
+            }
+            OptionCard("Google Drive") {
+                val driveCtx = LocalContext.current
+                Text(
+                    "Word, Excel and PowerPoint to PDF use your own Google Drive for a moment: the file is sent there, " +
+                        "converted and deleted right away. The app only sees files it makes itself.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                var sweeping by remember { mutableStateOf(false) }
+                var sweepMessage by remember { mutableStateOf<String?>(null) }
+                val sweepScope = rememberCoroutineScope()
+                val authorizeSweep = rememberDriveAuthorizer(
+                    onToken = { token ->
+                        sweepScope.launch {
+                            val message = withContext(Dispatchers.IO) {
+                                try {
+                                    val n = OfficeConvert.removeAllTemp(driveCtx, token)
+                                    if (n == 0) "No temporary files found in your Google Drive"
+                                    else "Removed ${ConvertHelpers.plural(n, "temporary file")} from your Google Drive"
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    e.message ?: "Could not remove the files"
+                                }
+                            }
+                            sweepMessage = message
+                            sweeping = false
+                        }
+                    },
+                    onMessage = { message -> sweepMessage = message; sweeping = false }
+                )
+                SecondaryButton(
+                    "Remove leftover temp files",
+                    enabled = !sweeping,
+                    onClick = { sweeping = true; sweepMessage = null; authorizeSweep() }
+                )
+                sweepMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                SecondaryButton(
+                    "Manage Google access",
+                    onClick = {
+                        runCatching {
+                            driveCtx.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse("https://myaccount.google.com/permissions"))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
                 )
             }
         }

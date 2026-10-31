@@ -9,6 +9,8 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.common.api.Scope
+import com.google.android.gms.tasks.Tasks
+import java.util.concurrent.TimeUnit
 
 /**
  * Asks the user for permission to use their own Google Drive (scope drive.file only: the app sees just the
@@ -65,6 +67,20 @@ object GoogleDriveAuth {
                 .addOnFailureListener { onResult(Outcome.Failed(MSG_NOT_GRANTED)) }
         } catch (e: Exception) {
             onResult(Outcome.Failed(MSG_NOT_GRANTED))
+        }
+    }
+
+    /**
+     * A token for use on a background thread: waits for the answer, so never call it on the main thread.
+     * Used when Google answered 401 in the middle of a conversion. Returns null when the user would have to agree again.
+     */
+    fun tokenBlocking(context: Context): String? {
+        if (!playServicesAvailable(context)) return null
+        return try {
+            val result = Tasks.await(Identity.getAuthorizationClient(context).authorize(request()), 30, TimeUnit.SECONDS)
+            (outcomeOf(result) as? Outcome.Token)?.accessToken
+        } catch (e: Exception) {
+            null
         }
     }
 

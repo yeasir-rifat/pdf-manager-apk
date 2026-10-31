@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.core.content.IntentCompat
 import com.pdfmanager.app.data.IncomingPdf
+import com.pdfmanager.app.data.OfficeKind
 import kotlin.concurrent.thread
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.core.tween
@@ -198,6 +199,9 @@ class MainActivity : ComponentActivity() {
                         composable("pdf2text") { PdfToTextScreen(back) }
                         composable("extractimg") { ExtractImagesScreen(back) }
                         composable("text2pdf") { TextToPdfScreen(back, open) }
+                        composable("word2pdf") { OfficeToPdfScreen(OfficeKind.WORD, back, open) }
+                        composable("excel2pdf") { OfficeToPdfScreen(OfficeKind.EXCEL, back, open) }
+                        composable("ppt2pdf") { OfficeToPdfScreen(OfficeKind.POWERPOINT, back, open) }
                         composable("croprotate") { CropRotateScreen(back, open) }
                         composable("lock") { LockUnlockScreen(back, open) }
                         composable("compress") { CompressScreen(back, open) }
