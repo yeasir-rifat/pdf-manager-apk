@@ -175,6 +175,7 @@
     <string name="files_starred">Starred</string>
     <string name="files_recent">Recent</string>
     <string name="files_unfiled">Unfiled</string>
+    <string name="files_folders">Folders</string>
     <string name="files_new_folder">New folder</string>
     <string name="files_folder_name">Name</string>
     <string name="files_file_name">File name</string>
