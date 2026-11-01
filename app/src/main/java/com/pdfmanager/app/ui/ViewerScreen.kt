@@ -97,6 +97,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pdfmanager.app.data.AppDatabase
 import com.pdfmanager.app.data.PdfOps
 import kotlinx.coroutines.Dispatchers
@@ -746,11 +747,6 @@ fun ViewerScreen(
                     }
                 },
                 actions = {
-                    if (holder != null) {
-                        IconButton(onClick = { showPages = true }) {
-                            Icon(AppIcons.GridView, contentDescription = stringResource(R.string.viewer_all_pages))
-                        }
-                    }
                     IconButton(onClick = { Share.pdfs(context, listOf(uriString)) }) {
                         Icon(AppIcons.Share, contentDescription = stringResource(R.string.common_share))
                     }
@@ -931,11 +927,36 @@ fun ViewerScreen(
                                 translationX = offsetX
                             },
                             state = listState,
-                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = ViewerBarHeight + 12.dp, bottom = 12.dp + ViewerBottomBarHeight),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = ViewerBarHeight + 12.dp, bottom = (12.dp + ViewerBottomBarHeight) / scale),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             items(count = h.pageCount, key = { it }) { index ->
-                                PdfPage(h, index, renderScale, settleTick, viewport, { pagePx = it }, selection, searchView) { selection = it }
+                                Box {
+                                    PdfPage(h, index, renderScale, settleTick, viewport, { pagePx = it }, selection, searchView) { selection = it }
+                                    if ((index + 1) in bookmarks) {
+                                        // Small ribbon on a bookmarked page; kept the same size on screen at any zoom
+                                        Row(
+                                            Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(end = 14.dp)
+                                                .graphicsLayer {
+                                                    transformOrigin = TransformOrigin(1f, 0f)
+                                                    scaleX = 1f / scale
+                                                    scaleY = 1f / scale
+                                                }
+                                                .background(
+                                                    MaterialTheme.colorScheme.primary,
+                                                    RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)
+                                                )
+                                                .padding(horizontal = 6.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(AppIcons.Bookmark, null, Modifier.size(11.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                                            Spacer(Modifier.width(3.dp))
+                                            Text("Bookmark", fontSize = 9.sp, color = MaterialTheme.colorScheme.onPrimary, maxLines = 1)
+                                        }
+                                    }
+                                }
                             }
                         }
                         }

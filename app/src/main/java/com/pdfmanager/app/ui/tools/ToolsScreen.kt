@@ -118,9 +118,9 @@ fun ToolsScreen(onNavigate: (String) -> Unit) {
                     onNavigate(tool.route)
                 }
                 val shownRecents = if (searching) emptyList() else recents
-                // Category headings are hidden while searching
+                // Category headings (List view only) are hidden while searching
                 if (listMode) ToolList(results, onToolClick = open, showHeaders = !searching, recents = shownRecents)
-                else ToolGrid(results, onToolClick = open, showHeaders = !searching, recents = shownRecents)
+                else ToolGrid(results, onToolClick = open)
             }
         }
     }

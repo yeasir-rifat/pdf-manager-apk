@@ -81,7 +81,6 @@ fun HomeScreen(
     val recents by vm.recents.collectAsStateWithLifecycle()
     val folders by vm.folders.collectAsStateWithLifecycle()
     val actions = rememberFileActionState()
-    val continueInfo = rememberContinueInfo(recents.firstOrNull())
     val quickTools = remember { quickActionIds.mapNotNull { id -> ToolCatalog.all.firstOrNull { it.id == id } } }
 
     val snackbar = remember { SnackbarHostState() }
@@ -117,9 +116,6 @@ fun HomeScreen(
         ) {
             // Search is always visible here, so a new person does not have to find a small icon
             item(key = "search") { HomeSearchPill(onClick = { vm.openSearch(); onOpenFiles() }) }
-            continueInfo?.let { info ->
-                item(key = "continue") { ContinueReadingCard(info) { onOpen(info.pdf.uri) } }
-            }
             item(key = "quick-title") { HomeSectionTitle(stringResource(R.string.home_quick_actions)) }
             item(key = "quick-actions") {
                 // Two per row: four narrow cards would clip longer (and Bengali) names
@@ -212,51 +208,6 @@ private fun HomeSearchPill(onClick: () -> Unit) {
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-    }
-}
-
-/** The file read last, with the page the reader stopped at (1-based) and the page count. */
-private class ContinueInfo(val pdf: PdfEntity, val page: Int, val total: Int)
-
-/**
- * Reads the last page saved by the viewer (SharedPreferences "positions", key = uri hash, value = 0-based page).
- * Null when there is no recent file, the page count is not known yet, or the file was never read past page 1.
- */
-@Composable
-private fun rememberContinueInfo(pdf: PdfEntity?): ContinueInfo? {
-    if (pdf == null) return null
-    val context = LocalContext.current
-    val pages by rememberPdfPageCount(pdf)
-    // lastOpened changes when the viewer is left, so the saved page is read again when Home comes back
-    val saved = remember(pdf.uri, pdf.lastOpened) {
-        context.getSharedPreferences("positions", android.content.Context.MODE_PRIVATE)
-            .getInt(pdf.uri.hashCode().toString(), 0) + 1
-    }
-    val total = pages ?: 0
-    if (total <= 0 || saved <= 1) return null
-    return ContinueInfo(pdf, saved.coerceAtMost(total), total)
-}
-
-@Composable
-private fun ContinueReadingCard(info: ContinueInfo, onContinue: () -> Unit) {
-    val pdf = info.pdf
-    AppCard(Modifier.fillMaxWidth(), onClick = onContinue) {
-        Row(Modifier.padding(AppDimens.space16), verticalAlignment = Alignment.CenterVertically) {
-            PdfThumb(pdf.uri, Modifier.size(width = 64.dp, height = 84.dp), stamp = "${pdf.modifiedSec}-${pdf.sizeBytes}")
-            Spacer(Modifier.width(AppDimens.space16))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppDimens.space4)) {
-                Text(stringResource(R.string.home_continue), style = AppText.caption, color = MaterialTheme.colorScheme.primary)
-                Text(pdf.name, style = AppText.subtitle, color = AppTheme.colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(
-                    stringResource(R.string.home_continue_page, info.page, info.total),
-                    style = AppText.caption, color = AppTheme.colors.textSecondary
-                )
-                LinearProgressIndicator(
-                    progress = { (info.page.toFloat() / info.total).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().padding(top = AppDimens.space4).height(4.dp).clip(CircleShape)
-                )
-            }
-        }
     }
 }
 

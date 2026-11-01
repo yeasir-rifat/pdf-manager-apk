@@ -69,11 +69,8 @@
     <string name="settings_sort_newest">Newest first</string>
     <string name="settings_sort_largest">Largest first</string>
     <string name="settings_search_inside">Search inside PDFs</string>
-    <string name="settings_search_inside_desc">Keeps the text of your PDFs on this phone so search can find words inside them. Turning it off deletes the stored text.</string>
     <string name="settings_saving">Saving</string>
     <string name="settings_ask_name">Ask for file name</string>
-    <string name="settings_ask_name_desc">After a tool finishes, ask what to call the new file</string>
-    <string name="settings_saving_where">PDFs and text files are saved in %1$s. Images are saved in %2$s. Each file name ends with the tool that made it, like report_merged.pdf.</string>
     <string name="settings_drive">Google Drive</string>
     <string name="settings_drive_sweep">Remove leftover temp files</string>
     <string name="settings_drive_manage">Manage Google access</string>
@@ -127,11 +124,9 @@
     <!-- Settings: vibration feedback -->
     <string name="settings_feedback">Feedback</string>
     <string name="settings_vibration">Vibration feedback</string>
-    <string name="settings_vibration_desc">A light tap when you add a bookmark, jump to a page or confirm a delete</string>
 
     <!-- Settings: accent color -->
     <string name="settings_accent">Accent color</string>
-    <string name="settings_accent_locked">Turn off Wallpaper colors to choose an accent</string>
     <string name="accent_default">Default</string>
     <string name="accent_blue">Blue</string>
     <string name="accent_green">Green</string>
@@ -140,7 +135,6 @@
 
     <!-- Settings: pure black dark mode -->
     <string name="settings_pure_black">Pure black dark mode</string>
-    <string name="settings_pure_black_desc">Fully black background that saves battery on OLED screens. Works in the dark theme only</string>
     <!-- Result card -->
     <string name="result_open">Open</string>
     <string name="result_share">Share</string>
@@ -280,8 +274,6 @@
 
     <!-- Home: step 4 -->
     <string name="home_search_hint">Search files or text inside PDFs</string>
-    <string name="home_continue">Continue reading</string>
-    <string name="home_continue_page">Page %1$d of %2$d</string>
 
     <!-- Tool screens: step 3 -->
     <string name="common_working">Working…</string>
@@ -301,8 +293,6 @@
     <!-- Settings: About -->
     <string name="settings_about">About</string>
     <string name="settings_version">Version %1$s</string>
-    <string name="settings_privacy_note">Your files stay on this device. Only Word, Excel and PowerPoint conversion uses your own Google Drive, briefly.</string>
-    <string name="settings_drive_intro">Used only to turn Word, Excel and PowerPoint files into PDF. The file is deleted from Drive right after.</string>
 
     <!-- Tools: recently used -->
     <string name="tools_recent">Recently used</string>

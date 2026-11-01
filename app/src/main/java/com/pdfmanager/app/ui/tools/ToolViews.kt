@@ -57,19 +57,16 @@ import com.pdfmanager.app.ui.pressScale
 private val CardShape = RoundedCornerShape(AppDimens.cardRadius)
 
 /**
- * The tools as a grid of cards: three columns on phones, as many as fit (about 120dp each) on wide
- * screens and in landscape. Every item has a stable key (the tool id). With [showHeaders] each
- * category starts with a full-width heading; it is off while searching.
+ * The tools as a plain grid of cards, in catalog order, with no group headings: three columns on
+ * phones, as many as fit (about 120dp each) on wide screens and in landscape. Every item has a
+ * stable key (the tool id). Grouping belongs to the List view only.
  */
 @Composable
 fun ToolGrid(
     tools: List<ToolDef>,
     onToolClick: (ToolDef) -> Unit,
-    modifier: Modifier = Modifier,
-    showHeaders: Boolean = true,
-    recents: List<ToolDef> = emptyList()
+    modifier: Modifier = Modifier
 ) {
-    val groups = remember(tools) { ToolCatalog.groupByCategory(tools) }
     val compact = LocalConfiguration.current.screenWidthDp < 600
     LazyVerticalGrid(
         columns = if (compact) GridCells.Fixed(3) else GridCells.Adaptive(minSize = 120.dp),
@@ -78,24 +75,7 @@ fun ToolGrid(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        if (showHeaders && recents.isNotEmpty()) {
-            item(key = "header-recent", span = { GridItemSpan(maxLineSpan) }) {
-                ToolCategoryHeader(stringResource(R.string.tools_recent))
-            }
-            // A different key from the tool's own entry below: the same tool is listed twice,
-            // and two items with the same key would crash the grid
-            items(recents, key = { "recent-${it.id}" }) { tool -> ToolCard(tool, onClick = { onToolClick(tool) }) }
-        }
-        if (showHeaders) {
-            groups.forEach { (category, rows) ->
-                item(key = "header-${category.name}", span = { GridItemSpan(maxLineSpan) }) {
-                    ToolCategoryHeader(stringResource(category.titleRes))
-                }
-                items(rows, key = { it.id }) { tool -> ToolCard(tool, onClick = { onToolClick(tool) }) }
-            }
-        } else {
-            items(tools, key = { it.id }) { tool -> ToolCard(tool, onClick = { onToolClick(tool) }) }
-        }
+        items(tools, key = { it.id }) { tool -> ToolCard(tool, onClick = { onToolClick(tool) }) }
     }
 }
 
@@ -199,8 +179,8 @@ fun ToolList(
 }
 
 /**
- * Small group heading: the category name (Caption style, secondary color, always one line) with a
- * thin line after it, and a 16dp gap above. It has no side padding, so the caller sets it.
+ * Small group heading for the List view: the category name (Caption style, secondary color, always
+ * one line), with no line after it, and a 16dp gap above. It has no side padding, so the caller sets it.
  */
 @Composable
 fun ToolCategoryHeader(title: String, modifier: Modifier = Modifier) {
@@ -216,8 +196,6 @@ fun ToolCategoryHeader(title: String, modifier: Modifier = Modifier) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Spacer(Modifier.width(AppDimens.space12))
-        HorizontalDivider(Modifier.weight(1f), thickness = AppDimens.hairline, color = colors.divider)
     }
 }
 

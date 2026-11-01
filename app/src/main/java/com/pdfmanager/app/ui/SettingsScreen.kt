@@ -3,7 +3,19 @@ package com.pdfmanager.app.ui
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,7 +72,7 @@ import kotlinx.coroutines.withContext
  * theme and wallpaper colors come from MainActivity (the "ui" preferences), default sorting and
  * search-inside-PDFs come from the shared [LibraryViewModel]. Nothing is stored twice.
  *
- * One card per topic, in this order: Appearance, Files, Saving, Feedback, Google Drive, About.
+ * One dropdown card per topic, in this order: Appearance, Files, Saving, Feedback, Google Drive, About.
  */
 @Composable
 fun SettingsScreen(
@@ -106,7 +118,7 @@ private fun AppearanceSection(
     onPureBlack: (Boolean) -> Unit
 ) {
     val wallpaperColorsAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    OptionCard(stringResource(R.string.settings_appearance)) {
+    SettingsCard(stringResource(R.string.settings_appearance)) {
         // Theme and the dark-only switch that belongs to it
         SettingsLabel(stringResource(R.string.settings_theme))
         Column {
@@ -127,7 +139,6 @@ private fun AppearanceSection(
         HorizontalDivider()
         SwitchRow(
             title = stringResource(R.string.settings_pure_black),
-            description = stringResource(R.string.settings_pure_black_desc),
             checked = pureBlack,
             onChange = onPureBlack,
             enabled = darkNow
@@ -154,7 +165,7 @@ private fun AppearanceSection(
 private fun FilesSection(vm: LibraryViewModel) {
     val sort by vm.sort.collectAsStateWithLifecycle()
     val searchInside by vm.searchInside.collectAsStateWithLifecycle()
-    OptionCard(stringResource(R.string.settings_files)) {
+    SettingsCard(stringResource(R.string.settings_files)) {
         SettingsLabel(stringResource(R.string.settings_sort))
         Column {
             listOf(
@@ -168,7 +179,6 @@ private fun FilesSection(vm: LibraryViewModel) {
         HorizontalDivider()
         SwitchRow(
             title = stringResource(R.string.settings_search_inside),
-            description = stringResource(R.string.settings_search_inside_desc),
             checked = searchInside,
             onChange = { vm.setSearchInside(it) }
         )
@@ -180,18 +190,11 @@ private fun FilesSection(vm: LibraryViewModel) {
 private fun SavingSection() {
     val ctx = LocalContext.current
     var askName by remember { mutableStateOf(NamePref.enabled(ctx)) }
-    OptionCard(stringResource(R.string.settings_saving)) {
+    SettingsCard(stringResource(R.string.settings_saving)) {
         SwitchRow(
             title = stringResource(R.string.settings_ask_name),
-            description = stringResource(R.string.settings_ask_name_desc),
             checked = askName,
             onChange = { askName = it; NamePref.set(ctx, it) }
-        )
-        HorizontalDivider()
-        Text(
-            stringResource(R.string.settings_saving_where, DOCS_FOLDER, PICTURES_FOLDER),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -200,10 +203,9 @@ private fun SavingSection() {
 private fun FeedbackSection() {
     val ctx = LocalContext.current
     var vibration by remember { mutableStateOf(HapticPrefs.enabled(ctx)) }
-    OptionCard(stringResource(R.string.settings_feedback)) {
+    SettingsCard(stringResource(R.string.settings_feedback)) {
         SwitchRow(
             title = stringResource(R.string.settings_vibration),
-            description = stringResource(R.string.settings_vibration_desc),
             checked = vibration,
             onChange = { vibration = it; HapticPrefs.set(ctx, it) }
         )
@@ -236,12 +238,7 @@ private fun DriveSection() {
         },
         onMessage = { message -> sweepMessage = message; sweeping = false }
     )
-    OptionCard(stringResource(R.string.settings_drive)) {
-        Text(
-            stringResource(R.string.settings_drive_intro),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    SettingsCard(stringResource(R.string.settings_drive)) {
         SecondaryButton(
             stringResource(R.string.settings_drive_sweep),
             enabled = !sweeping,
@@ -271,13 +268,56 @@ private fun AboutSection() {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
             .getOrNull().orEmpty()
     }
-    OptionCard(stringResource(R.string.settings_about)) {
+    SettingsCard(stringResource(R.string.settings_about)) {
         Text(stringResource(R.string.settings_version, version), style = MaterialTheme.typography.bodyMedium)
-        Text(
-            stringResource(R.string.settings_privacy_note),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    }
+}
+
+/** Length of the open and close motion of a Settings card. */
+private const val SETTINGS_CARD_MS = 300
+
+/**
+ * A Settings card that opens and closes like a dropdown. It starts closed. Tapping the title row
+ * turns the arrow and slides the content open or shut with a fade. The open or closed choice
+ * survives rotation. Content that changes (switches, the Drive result line) is kept by the callers,
+ * so closing a card never loses a setting.
+ */
+@Composable
+private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val arrow by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(SETTINGS_CARD_MS, easing = FastOutSlowInEasing),
+        label = "settingsArrow"
+    )
+    AppCard(Modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    .clickable(role = Role.Button) { expanded = !expanded }
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionLabel(title, Modifier.weight(1f))
+                Icon(
+                    AppIcons.ExpandMore, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.graphicsLayer { rotationZ = arrow }
+                )
+            }
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(tween(SETTINGS_CARD_MS, easing = FastOutSlowInEasing)) +
+                    fadeIn(tween(SETTINGS_CARD_MS, easing = FastOutSlowInEasing)),
+                exit = shrinkVertically(tween(SETTINGS_CARD_MS, easing = FastOutSlowInEasing)) +
+                    fadeOut(tween(SETTINGS_CARD_MS / 2))
+            ) {
+                Column(
+                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) { content() }
+            }
+        }
     }
 }
 
@@ -338,11 +378,6 @@ private fun AccentPicker(selected: Int, enabled: Boolean, onSelect: (Int) -> Uni
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         SettingsLabel(stringResource(R.string.settings_accent))
-        if (!enabled) Text(
-            stringResource(R.string.settings_accent_locked),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
         Row(Modifier.fillMaxWidth()) {
             AccentThemes.all.forEachIndexed { index, theme ->
                 val isSelected = index == selected

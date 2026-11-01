@@ -30,6 +30,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import com.pdfmanager.app.ui.tools.ToolCatalog
+import com.pdfmanager.app.ui.tools.ToolCategory
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -232,20 +235,34 @@ internal fun SendToToolDialog(files: List<PdfEntity>, onDismiss: () -> Unit, onP
     val many = files.size >= 2
     val options = if (many) listOf(SendTool(R.string.tool_merge, AppIcons.MergeType, "merge", Accent.Indigo))
     else singleFileTools
+    // Same tools, grouped under the category names used on the Tools screen
+    val groups = ToolCategory.entries.mapNotNull { c ->
+        val inGroup = options.filter { o -> ToolCatalog.all.firstOrNull { it.route == o.route }?.category == c }
+        if (inGroup.isEmpty()) null else c to inGroup
+    }
     AlertDialog(
-        modifier = Modifier.dialogEnter(),
+        modifier = Modifier.fillMaxWidth(0.94f).dialogEnter(),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         title = { Text(if (many) stringResource(R.string.files_send_title_many, files.size) else stringResource(R.string.files_send_title_one)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                options.forEach { t ->
-                    ListItem(
-                        headlineContent = { FitText(stringResource(t.titleRes)) },
-                        leadingContent = { IconBadge(t.icon, t.accent, size = 36.dp) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onPick(t.route) }
+                groups.forEachIndexed { i, (cat, tools) ->
+                    Text(
+                        stringResource(cat.titleRes),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 16.dp, top = if (i == 0) 0.dp else 14.dp, bottom = 4.dp)
                     )
+                    tools.forEach { t ->
+                        ListItem(
+                            headlineContent = { FitText(stringResource(t.titleRes)) },
+                            leadingContent = { IconBadge(t.icon, t.accent, size = 36.dp) },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onPick(t.route) }
+                        )
+                    }
                 }
             }
         },
