@@ -38,7 +38,22 @@ fun CompressScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val analyzing = picked != null && analysis?.first != picked
     val estimate = analysis?.takeIf { it.first == picked }?.second
 
-    ToolScaffold("Compress PDF", onBack) {
+    ToolScaffold("Compress PDF", onBack, bottomBar = {
+        PrimaryButton("Compress", icon = AppIcons.Compress, enabled = picked != null && !job.busy && !analyzing, onClick = {
+            val p = picked!!
+            val st = strength
+            job.launch(scope) {
+                var summary = ""
+                job.originalSizeBytes = runCatching {
+                    context.contentResolver.openFileDescriptor(p.uri, "r")?.use { it.statSize }
+                }.getOrNull()
+                val out = OutputStore.savePdf(context, outName("Compressed", p.name)) { os ->
+                    summary = PdfCompressor.compressAtStrength(context, p.uri, os, st, onProgress = { f -> job.fraction = f })
+                }
+                summary to out
+            }
+        })
+    }) {
         PdfPickerButton(picked) { picked = it }
         OptionCard("Compression strength") {
             Text("$strength%", style = MaterialTheme.typography.headlineMedium)
@@ -91,19 +106,8 @@ fun CompressScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 }
             }
         }
-        PrimaryButton("Compress", icon = AppIcons.Compress, enabled = picked != null && !job.busy && !analyzing, onClick = {
-            val p = picked!!
-            val st = strength
-            job.launch(scope) {
-                var summary = ""
-                val out = OutputStore.savePdf(context, outName("Compressed", p.name)) { os ->
-                    summary = PdfCompressor.compressAtStrength(context, p.uri, os, st)
-                }
-                "$summary Saved in Documents/PDF Manager" to out
-            }
-        })
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("Compressed_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "compressed") }, onOpen)
     }
 }
 
@@ -121,7 +125,20 @@ fun NupScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val job = remember { ToolJob() }
     val pageCount by rememberPageCount(picked)
     val pages = pageCount?.takeIf { it > 0 }
-    ToolScaffold("Pages per sheet", onBack) {
+    ToolScaffold("Pages per sheet", onBack, bottomBar = {
+        PrimaryButton("Create", icon = AppIcons.GridView, enabled = picked != null && !job.busy, onClick = {
+            val p = picked!!
+            val l = layout
+            val b = border
+            job.launch(scope) {
+                var sheets = 0
+                val out = OutputStore.savePdf(context, outName("${l.perSheet}up", p.name)) { os ->
+                    sheets = PdfLayout.nup(context, p.uri, os, l, b)
+                }
+                "Created $sheets sheets" to out
+            }
+        })
+    }) {
         PdfPickerButton(picked) { picked = it }
         OptionCard("Pages per sheet") {
             ChipRow(PdfLayout.nupCounts.map { it to "$it" }, perSheet) {
@@ -136,21 +153,9 @@ fun NupScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             }
         }
         NupPreview(layout, border, pages, picked)
-        PrimaryButton("Create", icon = AppIcons.GridView, enabled = picked != null && !job.busy, onClick = {
-            val p = picked!!
-            val l = layout
-            val b = border
-            job.launch(scope) {
-                var sheets = 0
-                val out = OutputStore.savePdf(context, outName("${l.perSheet}up", p.name)) { os ->
-                    sheets = PdfLayout.nup(context, p.uri, os, l, b)
-                }
-                "Created $sheets sheets. Saved in Documents/PDF Manager" to out
-            }
-        })
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { Regex("^\\d+up_").containsMatchIn(it) }, onOpen)
+        RecentResults(job.result, { Regex("(^\\d+up_|_\\d+up\\.pdf$)", RegexOption.IGNORE_CASE).containsMatchIn(it) }, onOpen)
     }
 }
 
@@ -164,9 +169,7 @@ fun BookletScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val job = remember { ToolJob() }
     val pageCount by rememberPageCount(picked)
     val pages = pageCount?.takeIf { it > 0 }
-    ToolScaffold("Booklet", onBack) {
-        PdfPickerButton(picked) { picked = it }
-        BookletPreview(pages)
+    ToolScaffold("Booklet", onBack, bottomBar = {
         PrimaryButton("Create booklet", icon = AppIcons.AutoStories, enabled = picked != null && !job.busy, onClick = {
             val p = picked!!
             job.launch(scope) {
@@ -174,11 +177,14 @@ fun BookletScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 val out = OutputStore.savePdf(context, outName("Booklet", p.name)) { os ->
                     sides = PdfLayout.booklet(context, p.uri, os)
                 }
-                "Created $sides sheet sides (${sides / 2} sheets). Saved in Documents/PDF Manager" to out
+                "Created $sides sides (${sides / 2} sheets)" to out
             }
         })
+    }) {
+        PdfPickerButton(picked) { picked = it }
+        BookletPreview(pages)
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Booklet_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "booklet") }, onOpen)
     }
 }

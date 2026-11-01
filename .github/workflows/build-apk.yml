@@ -35,14 +35,29 @@ jobs:
         with:
           gradle-version: 8.9
 
-      # Lato is downloaded if you have not added it yourself. Kalpurush.ttf must be added by hand
-      # to app/src/main/assets/fonts/ (see the README there).
-      - name: Fetch Lato font if missing
+      # Inter is downloaded from its official release if you have not added it yourself. Kalpurush.ttf must be
+      # added by hand to app/src/main/assets/fonts/ (see the README there).
+      - name: Fetch Inter font if missing
         run: |
-          mkdir -p app/src/main/assets/fonts
-          for f in Lato-Regular.ttf Lato-Bold.ttf; do
-            [ -f "app/src/main/assets/fonts/$f" ] || curl -fsSL "https://github.com/google/fonts/raw/main/ofl/lato/$f" -o "app/src/main/assets/fonts/$f" || echo "Could not download $f"
-          done
+          dir=app/src/main/assets/fonts
+          mkdir -p "$dir"
+          if [ ! -f "$dir/Inter-Regular.ttf" ] || [ ! -f "$dir/Inter-Bold.ttf" ]; then
+            tmp=$(mktemp -d)
+            if curl -fsSL "https://github.com/rsms/inter/releases/download/v4.0/Inter-4.0.zip" -o "$tmp/inter.zip" && unzip -q "$tmp/inter.zip" -d "$tmp/x"; then
+              for f in Inter-Regular.ttf Inter-Bold.ttf; do
+                if [ ! -f "$dir/$f" ]; then
+                  src=$(find "$tmp/x" -name "$f" | head -n 1)
+                  if [ -n "$src" ]; then cp "$src" "$dir/$f"; else echo "Could not find $f in the Inter download"; fi
+                fi
+              done
+              if [ ! -f "$dir/OFL-Inter.txt" ]; then
+                lic=$(find "$tmp/x" -iname "LICENSE.txt" | head -n 1)
+                if [ -n "$lic" ]; then cp "$lic" "$dir/OFL-Inter.txt"; fi
+              fi
+            else
+              echo "Could not download Inter"
+            fi
+          fi
 
       # Restores the permanent keystore from the KEYSTORE_BASE64 secret. Pull requests from forks get no secrets,
       # so they (and runs where the secret is missing) fall back to the debug key and show a warning.

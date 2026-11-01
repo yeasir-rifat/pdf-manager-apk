@@ -1,7 +1,9 @@
-Put these font files in this folder (exact names):
+Fonts used by the app (exact names, .ttf):
 
-  Lato-Regular.ttf    English, normal text
-  Lato-Bold.ttf       English, titles and buttons
-  Kalpurush.ttf       Bengali (used automatically for Bengali letters)
+  Inter-Regular.ttf   English, normal text  (Inter 18pt, Latin-only subset, ~50 KB)
+  Inter-Bold.ttf      English, titles and buttons  (same, Bold)
+  OFL-Inter.txt       Inter license (SIL OFL)
+  Kalpurush.ttf       Bengali letters; chained behind Inter
 
-If a file is missing the app still works and uses the system font for it.
+The Inter files are trimmed to Latin letters, digits and punctuation to keep the APK small.
+Bengali and other scripts come from Kalpurush / system fonts.

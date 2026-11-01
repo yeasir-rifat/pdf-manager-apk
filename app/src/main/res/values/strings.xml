@@ -70,6 +70,13 @@
     <string name="settings_sort_largest">Largest first</string>
     <string name="settings_search_inside">Search inside PDFs</string>
     <string name="settings_search_inside_desc">Keeps the text of your PDFs on this phone so search can find words inside them. Turning it off deletes the stored text.</string>
+    <string name="settings_saving">Saving</string>
+    <string name="settings_ask_name">Ask for file name</string>
+    <string name="settings_ask_name_desc">After a tool finishes, ask what to call the new file</string>
+    <string name="settings_saving_where">PDFs and text files are saved in %1$s. Images are saved in %2$s. Each file name ends with the tool that made it, like report_merged.pdf.</string>
+    <string name="settings_drive">Google Drive</string>
+    <string name="settings_drive_sweep">Remove leftover temp files</string>
+    <string name="settings_drive_manage">Manage Google access</string>
 
     <!-- Home and Files -->
     <string name="home_quick_actions">Quick actions</string>
@@ -77,6 +84,225 @@
     <string name="home_see_all">See all</string>
     <string name="home_search">Search files</string>
     <string name="home_recent_empty_title">No recent files yet</string>
-    <string name="home_browse_files">Browse files</string>
     <string name="files_search_hint">Search in PDF Manager</string>
+
+    <!-- Home: empty state and recent file cards -->
+    <string name="home_open_pdf">Open a PDF</string>
+    <string name="home_not_pdf">Not a PDF file</string>
+    <string name="home_open_failed">Could not open file</string>
+    <string name="home_fav_add">Add to favorites</string>
+    <string name="home_fav_remove">Remove from favorites</string>
+    <string name="home_more">More</string>
+    <string name="home_recent_meta">%1$s · %2$s</string>
+    <string name="home_ago_now">Just now</string>
+    <plurals name="home_ago_minutes">
+        <item quantity="one">%d min ago</item>
+        <item quantity="other">%d min ago</item>
+    </plurals>
+    <plurals name="home_ago_hours">
+        <item quantity="one">%d hr ago</item>
+        <item quantity="other">%d hr ago</item>
+    </plurals>
+    <plurals name="home_ago_days">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
+    <plurals name="home_ago_weeks">
+        <item quantity="one">%d week ago</item>
+        <item quantity="other">%d weeks ago</item>
+    </plurals>
+    <plurals name="home_ago_months">
+        <item quantity="one">%d month ago</item>
+        <item quantity="other">%d months ago</item>
+    </plurals>
+    <plurals name="home_ago_years">
+        <item quantity="one">%d year ago</item>
+        <item quantity="other">%d years ago</item>
+    </plurals>
+    <plurals name="home_pages">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+
+    <!-- Settings: vibration feedback -->
+    <string name="settings_feedback">Feedback</string>
+    <string name="settings_vibration">Vibration feedback</string>
+    <string name="settings_vibration_desc">A light tap when you add a bookmark, jump to a page or confirm a delete</string>
+
+    <!-- Settings: accent color -->
+    <string name="settings_accent">Accent color</string>
+    <string name="settings_accent_locked">Turn off Wallpaper colors to choose an accent</string>
+    <string name="accent_default">Default</string>
+    <string name="accent_blue">Blue</string>
+    <string name="accent_green">Green</string>
+    <string name="accent_purple">Purple</string>
+    <string name="accent_rose">Rose</string>
+
+    <!-- Settings: pure black dark mode -->
+    <string name="settings_pure_black">Pure black dark mode</string>
+    <string name="settings_pure_black_desc">Fully black background that saves battery on OLED screens. Works in the dark theme only</string>
+    <!-- Result card -->
+    <string name="result_open">Open</string>
+    <string name="result_share">Share</string>
+    <string name="result_done">Done</string>
+    <string name="result_saved_in">Saved in %1$s</string>
+    <string name="result_size_change">%1$s to %2$s</string>
+    <string name="result_share_pdf">Share PDF</string>
+    <string name="result_share_file">Share file</string>
+
+    <!-- Common -->
+    <string name="common_cancel">Cancel</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_close">Close</string>
+    <string name="common_create">Create</string>
+    <string name="common_rename">Rename</string>
+    <string name="common_share">Share</string>
+    <string name="common_back">Back</string>
+    <string name="common_go">Go</string>
+    <string name="common_open">Open</string>
+    <string name="common_print">Print</string>
+    <string name="common_select_all">Select all</string>
+    <string name="common_more">More</string>
+    <string name="common_new">New</string>
+    <string name="common_sort">Sort</string>
+    <string name="common_hide">Hide</string>
+    <string name="common_show">Show</string>
+    <string name="common_copied">Copied</string>
+    <string name="common_try_again">Try again</string>
+
+    <!-- Files screen -->
+    <string name="files_all">All</string>
+    <string name="files_starred">Starred</string>
+    <string name="files_recent">Recent</string>
+    <string name="files_unfiled">Unfiled</string>
+    <string name="files_new_folder">New folder</string>
+    <string name="files_folder_name">Name</string>
+    <string name="files_file_name">File name</string>
+    <string name="files_clear_recent">Clear recent list</string>
+    <string name="files_selected_count">%1$d selected</string>
+    <string name="files_cancel_selection">Cancel selection</string>
+    <string name="files_use_in_tool">Use in tool…</string>
+    <string name="files_move_to_folder">Move to folder</string>
+    <string name="files_delete_folder_title">Delete folder?</string>
+    <string name="files_delete_folder_msg">The PDF files stay on your device and move back to Unfiled.</string>
+    <string name="files_no_matches">No matches</string>
+    <string name="files_no_favorites">No favorites yet</string>
+    <string name="files_no_recent">No recent files</string>
+    <string name="files_no_pdfs">No PDFs here</string>
+    <string name="files_scan_a_document">Scan a document</string>
+    <string name="files_indexing">Still reading PDFs: %1$d of %2$d</string>
+    <string name="files_indexing_status">Reading PDFs for text search: %1$d of %2$d</string>
+    <string name="files_label_results">Results</string>
+    <string name="files_label_favorites">Favorites</string>
+    <string name="files_label_all">All files</string>
+    <string name="files_label_folder">Folder</string>
+    <string name="files_section_count">%1$s · %2$d</string>
+    <string name="files_delete_one_msg">\"%1$s\" will be permanently deleted from your device.</string>
+    <string name="files_delete_many_msg">These files will be permanently deleted from your device.</string>
+    <string name="files_send_title_many">Use %1$d files in</string>
+    <string name="files_send_title_one">Use in tool</string>
+
+    <!-- Permission screen -->
+    <string name="permission_title">Your PDFs, all in one place</string>
+    <string name="permission_point_find">Finds every PDF automatically</string>
+    <string name="permission_point_tools">Merge, compress, scan and more</string>
+    <string name="permission_point_private">Private: your files stay on this device</string>
+    <string name="permission_allow">Allow file access</string>
+
+    <!-- Sharing -->
+    <string name="share_unavailable">Can\'t share this file</string>
+    <string name="share_no_app">No app can open this file</string>
+    <string name="share_copy_failed">Could not copy</string>
+
+    <!-- Viewer -->
+    <string name="viewer_go_to_page">Go to page</string>
+    <string name="viewer_go_hint">1 to %1$d</string>
+    <string name="viewer_search">Search in PDF</string>
+    <string name="viewer_no_results">No results</string>
+    <string name="viewer_not_available">Not available</string>
+    <string name="viewer_bookmark_add">Bookmark this page</string>
+    <string name="viewer_bookmark_remove">Remove bookmark</string>
+    <string name="viewer_bookmarks">Bookmarks</string>
+    <string name="viewer_bookmarks_count">Bookmarks (%1$d)</string>
+    <string name="viewer_bookmarked">Bookmarked page %1$d</string>
+    <string name="viewer_bookmark_removed">Bookmark removed</string>
+    <string name="viewer_page_n">Page %1$d</string>
+    <string name="viewer_night_mode">Night mode</string>
+    <string name="viewer_keep_on">Keep screen on</string>
+    <string name="viewer_rotation">Screen rotation</string>
+    <string name="viewer_rot_auto">Auto (follow the device)</string>
+    <string name="viewer_rot_auto_short">Auto</string>
+    <string name="viewer_rot_portrait">Portrait</string>
+    <string name="viewer_rot_landscape">Landscape</string>
+    <string name="viewer_zoom_in">Zoom in</string>
+    <string name="viewer_zoom_out">Zoom out</string>
+    <string name="viewer_fit_width">Fit to width</string>
+    <string name="viewer_edit">Edit this PDF</string>
+    <string name="viewer_open_with">Open with</string>
+    <string name="viewer_save_copy">Save a copy</string>
+    <string name="viewer_copy_saved">Copy saved</string>
+    <string name="viewer_copy_failed">Copy failed</string>
+    <string name="viewer_info">Document info</string>
+    <string name="viewer_info_name">Name</string>
+    <string name="viewer_info_size">Size</string>
+    <string name="viewer_info_pages">Pages</string>
+    <string name="viewer_info_page_size">Page size</string>
+    <string name="viewer_info_modified">Modified</string>
+    <string name="viewer_all_pages">All pages</string>
+    <string name="viewer_pages_title">Pages · %1$d</string>
+    <string name="viewer_copy">Copy</string>
+    <string name="viewer_enter_password">Enter password</string>
+    <string name="viewer_wrong_password">Wrong password</string>
+    <string name="viewer_open_failed">Could not open this file.</string>
+    <string name="viewer_cant_open_title">Can\'t open this PDF</string>
+    <string name="viewer_cant_open_msg">The file may be damaged or in a format this app cannot show.</string>
+    <string name="viewer_locked_title">This PDF is locked</string>
+    <string name="viewer_locked_msg">Enter its password to read it. The original file is not changed.</string>
+    <string name="viewer_prev_result">Previous result</string>
+    <string name="viewer_next_result">Next result</string>
+    <string name="viewer_clear_selection">Clear selection</string>
+    <string name="viewer_no_selectable_text">No selectable text here</string>
+    <string name="viewer_page_failed">Couldn\'t show page %1$d</string>
+
+    <plurals name="files_move_title">
+        <item quantity="one">Move %d file</item>
+        <item quantity="other">Move %d files</item>
+    </plurals>
+    <plurals name="files_delete_title">
+        <item quantity="one">Delete %d file?</item>
+        <item quantity="other">Delete %d files?</item>
+    </plurals>
+
+    <!-- Viewer: step 5 -->
+    <string name="viewer_search_short">Search</string>
+    <string name="viewer_edit_short">Edit</string>
+
+    <!-- Home: step 4 -->
+    <string name="home_search_hint">Search files or text inside PDFs</string>
+    <string name="home_continue">Continue reading</string>
+    <string name="home_continue_page">Page %1$d of %2$d</string>
+
+    <!-- Tool screens: step 3 -->
+    <string name="common_working">Working…</string>
+    <string name="pick_move_up">Move up</string>
+    <string name="pick_move_down">Move down</string>
+    <string name="pick_remove">Remove</string>
+    <string name="pick_reorder_hint">Press and hold a file, then drag to change the order</string>
+    <string name="err_title">Something went wrong</string>
+    <string name="err_locked">PDF is locked. Unlock it first</string>
+    <string name="err_memory">Not enough memory. Try a smaller PDF</string>
+    <string name="err_file_missing">File not found. It may have moved</string>
+    <string name="err_permission">No permission to read this file</string>
+    <string name="err_io">Could not read or save. Check storage</string>
+    <string name="err_generic">Could not finish. Try again</string>
+    <string name="err_details">Technical details</string>
+
+    <!-- Settings: About -->
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_privacy_note">Your files stay on this device. Only Word, Excel and PowerPoint conversion uses your own Google Drive, briefly.</string>
+    <string name="settings_drive_intro">Used only to turn Word, Excel and PowerPoint files into PDF. The file is deleted from Drive right after.</string>
+
+    <!-- Tools: recently used -->
+    <string name="tools_recent">Recently used</string>
 </resources>

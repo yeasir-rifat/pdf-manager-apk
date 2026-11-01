@@ -37,6 +37,8 @@ import com.pdfmanager.app.LibraryViewModel
 import com.pdfmanager.app.R
 import com.pdfmanager.app.data.FolderEntity
 import com.pdfmanager.app.data.PdfEntity
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 
 // Pieces shared by the Home and Files screens: storage access, the file dialogs and the permission screen.
 // Both screens use them with the same LibraryViewModel, so the file operations exist only once.
@@ -46,8 +48,6 @@ internal fun hasStoragePermission(context: Context): Boolean =
     else ContextCompat.checkSelfPermission(
         context, Manifest.permission.READ_EXTERNAL_STORAGE
     ) == PackageManager.PERMISSION_GRANTED
-
-internal fun filesLabel(n: Int) = if (n == 1) "1 file" else "$n files"
 
 /** Whether the app may read the PDFs, and how to ask for that. */
 internal class StorageAccess(val granted: Boolean, val request: () -> Unit)
@@ -104,15 +104,17 @@ internal fun FileActionDialogs(
     onNavigate: (String) -> Unit,
     onHandled: () -> Unit = {}
 ) {
+    val res = LocalContext.current.resources
     if (state.moveTargets.isNotEmpty()) {
         AlertDialog(
+            modifier = Modifier.dialogEnter(),
             onDismissRequest = { state.moveTargets = emptyList() },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("Move ${filesLabel(state.moveTargets.size)}") },
+            title = { Text(res.getQuantityString(R.plurals.files_move_title, state.moveTargets.size, state.moveTargets.size)) },
             text = {
                 LazyColumn {
                     item {
-                        FolderChoice("Unfiled", MaterialTheme.colorScheme.onSurfaceVariant) {
+                        FolderChoice(stringResource(R.string.files_unfiled), MaterialTheme.colorScheme.onSurfaceVariant) {
                             vm.move(state.moveTargets, null, null); state.moveTargets = emptyList(); onHandled()
                         }
                     }
@@ -124,39 +126,43 @@ internal fun FileActionDialogs(
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { state.moveTargets = emptyList() }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { state.moveTargets = emptyList() }) { Text(stringResource(R.string.common_cancel)) } }
         )
     }
 
+    val haptics = rememberAppHaptics()
     if (state.deleteTargets.isNotEmpty()) {
         AlertDialog(
+            modifier = Modifier.dialogEnter(),
             onDismissRequest = { state.deleteTargets = emptyList() },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("Delete ${filesLabel(state.deleteTargets.size)}?") },
+            title = { Text(res.getQuantityString(R.plurals.files_delete_title, state.deleteTargets.size, state.deleteTargets.size)) },
             text = {
                 Text(
-                    if (state.deleteTargets.size == 1) "\"${state.deleteTargets[0].name}\" will be permanently deleted from your device."
-                    else "These files will be permanently deleted from your device."
+                    if (state.deleteTargets.size == 1) stringResource(R.string.files_delete_one_msg, state.deleteTargets[0].name)
+                    else stringResource(R.string.files_delete_many_msg)
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
+                    haptics.confirm()
                     vm.delete(state.deleteTargets.map { it.uri }); state.deleteTargets = emptyList(); onHandled()
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { state.deleteTargets = emptyList() }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { state.deleteTargets = emptyList() }) { Text(stringResource(R.string.common_cancel)) } }
         )
     }
 
     state.renameTarget?.let { pdf ->
         var name by remember(pdf.uri) { mutableStateOf(pdf.name.removeSuffix(".pdf").removeSuffix(".PDF")) }
         AlertDialog(
+            modifier = Modifier.dialogEnter(),
             onDismissRequest = { state.renameTarget = null },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("Rename") },
+            title = { Text(stringResource(R.string.common_rename)) },
             text = {
                 OutlinedTextField(
-                    name, { name = it }, singleLine = true, label = { Text("File name") },
+                    name, { name = it }, singleLine = true, label = { Text(stringResource(R.string.files_file_name)) },
                     suffix = { Text(".pdf") },
                     keyboardOptions = KeyboardOptions.Default,
                     shape = RoundedCornerShape(14.dp)
@@ -164,10 +170,10 @@ internal fun FileActionDialogs(
             },
             confirmButton = {
                 TextButton(enabled = name.isNotBlank(), onClick = { vm.rename(pdf.uri, name); state.renameTarget = null }) {
-                    Text("Rename")
+                    Text(stringResource(R.string.common_rename))
                 }
             },
-            dismissButton = { TextButton(onClick = { state.renameTarget = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { state.renameTarget = null }) { Text(stringResource(R.string.common_cancel)) } }
         )
     }
 
@@ -195,46 +201,47 @@ private fun FolderChoice(name: String, tint: Color, onClick: () -> Unit) {
     )
 }
 
-private data class SendTool(val title: String, val icon: ImageVector, val route: String, val accent: Color)
+private data class SendTool(@StringRes val titleRes: Int, val icon: ImageVector, val route: String, val accent: Color)
 
 private val singleFileTools = listOf(
-    SendTool("Compress PDF", AppIcons.Compress, "compress", Accent.Orange),
-    SendTool("Split PDF", AppIcons.ContentCut, "split", Accent.Indigo),
-    SendTool("Extract / Delete pages", AppIcons.Checklist, "extract", Accent.Indigo),
-    SendTool("Reorder pages", AppIcons.SwapVert, "reorder", Accent.Indigo),
-    SendTool("Add blank page", AppIcons.NoteAdd, "blank", Accent.Indigo),
-    SendTool("Watermark", AppIcons.Watermark, "watermark", Accent.Violet),
-    SendTool("Page numbers", AppIcons.Numbers, "pagenum", Accent.Violet),
-    SendTool("Sign PDF", AppIcons.Edit, "sign", Accent.Violet),
-    SendTool("Highlight / Notes", AppIcons.StickyNote, "notes", Accent.Violet),
-    SendTool("Resize paper", AppIcons.AspectRatio, "resize", Accent.Violet),
-    SendTool("Poster print", AppIcons.Poster, "poster", Accent.Violet),
-    SendTool("Crop & Rotate", AppIcons.CropRotate, "croprotate", Accent.Indigo),
-    SendTool("Lock / Unlock", AppIcons.Lock, "lock", Accent.Rose),
-    SendTool("Repair PDF", AppIcons.Handyman, "repair", Accent.Rose),
-    SendTool("Edit metadata", AppIcons.DriveFileRenameOutline, "metadata", Accent.Rose),
-    SendTool("Pages per sheet", AppIcons.GridView, "nup", Accent.Indigo),
-    SendTool("Booklet", AppIcons.AutoStories, "booklet", Accent.Indigo),
-    SendTool("PDF to Image", AppIcons.PhotoLibrary, "pdf2img", Accent.Teal),
-    SendTool("PDF to Text", AppIcons.Description, "pdf2text", Accent.Teal),
-    SendTool("Extract images", AppIcons.ExtractImages, "extractimg", Accent.Teal),
+    SendTool(R.string.tool_compress, AppIcons.Compress, "compress", Accent.Orange),
+    SendTool(R.string.tool_split, AppIcons.ContentCut, "split", Accent.Indigo),
+    SendTool(R.string.tool_extract, AppIcons.Checklist, "extract", Accent.Indigo),
+    SendTool(R.string.tool_reorder, AppIcons.SwapVert, "reorder", Accent.Indigo),
+    SendTool(R.string.tool_blank, AppIcons.NoteAdd, "blank", Accent.Indigo),
+    SendTool(R.string.tool_watermark, AppIcons.Watermark, "watermark", Accent.Violet),
+    SendTool(R.string.tool_pagenum, AppIcons.Numbers, "pagenum", Accent.Violet),
+    SendTool(R.string.tool_sign, AppIcons.Edit, "sign", Accent.Violet),
+    SendTool(R.string.tool_notes, AppIcons.StickyNote, "notes", Accent.Violet),
+    SendTool(R.string.tool_resize, AppIcons.AspectRatio, "resize", Accent.Violet),
+    SendTool(R.string.tool_poster, AppIcons.Poster, "poster", Accent.Violet),
+    SendTool(R.string.tool_croprotate, AppIcons.CropRotate, "croprotate", Accent.Indigo),
+    SendTool(R.string.tool_lock, AppIcons.Lock, "lock", Accent.Rose),
+    SendTool(R.string.tool_repair, AppIcons.Handyman, "repair", Accent.Rose),
+    SendTool(R.string.tool_metadata, AppIcons.DriveFileRenameOutline, "metadata", Accent.Rose),
+    SendTool(R.string.tool_nup, AppIcons.GridView, "nup", Accent.Indigo),
+    SendTool(R.string.tool_booklet, AppIcons.AutoStories, "booklet", Accent.Indigo),
+    SendTool(R.string.tool_pdf2img, AppIcons.PhotoLibrary, "pdf2img", Accent.Teal),
+    SendTool(R.string.tool_pdf2text, AppIcons.Description, "pdf2text", Accent.Teal),
+    SendTool(R.string.tool_extractimg, AppIcons.ExtractImages, "extractimg", Accent.Teal),
 )
 
 /** Lets the user pick a tool for the chosen files; the tool opens with the files already loaded. */
 @Composable
-private fun SendToToolDialog(files: List<PdfEntity>, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+internal fun SendToToolDialog(files: List<PdfEntity>, onDismiss: () -> Unit, onPick: (String) -> Unit) {
     val many = files.size >= 2
-    val options = if (many) listOf(SendTool("Merge PDFs", AppIcons.MergeType, "merge", Accent.Indigo))
+    val options = if (many) listOf(SendTool(R.string.tool_merge, AppIcons.MergeType, "merge", Accent.Indigo))
     else singleFileTools
     AlertDialog(
+        modifier = Modifier.dialogEnter(),
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
-        title = { Text(if (many) "Use ${files.size} files in" else "Use in tool") },
+        title = { Text(if (many) stringResource(R.string.files_send_title_many, files.size) else stringResource(R.string.files_send_title_one)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 options.forEach { t ->
                     ListItem(
-                        headlineContent = { FitText(t.title) },
+                        headlineContent = { FitText(stringResource(t.titleRes)) },
                         leadingContent = { IconBadge(t.icon, t.accent, size = 36.dp) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onPick(t.route) }
@@ -243,7 +250,7 @@ private fun SendToToolDialog(files: List<PdfEntity>, onDismiss: () -> Unit, onPi
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
 }
 
@@ -257,12 +264,12 @@ internal fun PermissionHero(modifier: Modifier, onGrant: () -> Unit) {
     ) {
         Image(painterResource(R.drawable.app_logo), contentDescription = null, modifier = Modifier.size(104.dp).clip(RoundedCornerShape(percent = 22)))
         Spacer(Modifier.height(24.dp))
-        Text("Your PDFs, all in one place", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.permission_title), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Spacer(Modifier.height(28.dp))
         listOf(
-            Triple(AppIcons.Search, "Finds every PDF automatically", Accent.Indigo),
-            Triple(AppIcons.Handyman, "Merge, compress, scan and more", Accent.Orange),
-            Triple(AppIcons.Lock, "Private: your files stay on this device", Accent.Green)
+            Triple(AppIcons.Search, stringResource(R.string.permission_point_find), Accent.Indigo),
+            Triple(AppIcons.Handyman, stringResource(R.string.permission_point_tools), Accent.Orange),
+            Triple(AppIcons.Lock, stringResource(R.string.permission_point_private), Accent.Green)
         ).forEach { (icon, text, tint) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconBadge(icon, tint, size = 42.dp)
@@ -271,7 +278,7 @@ internal fun PermissionHero(modifier: Modifier, onGrant: () -> Unit) {
             }
         }
         Spacer(Modifier.height(28.dp))
-        PrimaryButton("Allow file access", onClick = onGrant)
+        PrimaryButton(stringResource(R.string.permission_allow), onClick = onGrant)
     }
 }
 

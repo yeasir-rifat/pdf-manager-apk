@@ -94,13 +94,7 @@ fun OfficeToPdfScreen(kind: OfficeKind, onBack: () -> Unit, onOpen: (String) -> 
         if (OfficeHelpers.extensionOf(it.name) in kind.allExt) null else "This is not a valid ${kind.label} file"
     }
 
-    ToolScaffold(officeTitle(kind), onBack) {
-        FilePickCard("${kind.label} file", file?.name, officeIcon(kind), officeAccent(kind)) {
-            picker.launch(OfficeHelpers.pickerMimes(kind))
-        }
-        if (nameProblem != null) {
-            FitText(nameProblem, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-        }
+    ToolScaffold(officeTitle(kind), onBack, bottomBar = {
         PrimaryButton(
             "Convert to PDF", icon = AppIcons.PictureAsPdf,
             enabled = file != null && nameProblem == null && !job.busy && !authorizing,
@@ -108,12 +102,20 @@ fun OfficeToPdfScreen(kind: OfficeKind, onBack: () -> Unit, onOpen: (String) -> 
                 if (OfficeConsentPref.accepted(context)) start() else showNotice = true
             }
         )
+    }) {
+        FilePickCard("${kind.label} file", file?.name, officeIcon(kind), officeAccent(kind)) {
+            picker.launch(OfficeHelpers.pickerMimes(kind))
+        }
+        if (nameProblem != null) {
+            FitText(nameProblem, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        }
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("${kind.prefix}_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, kind.prefix) }, onOpen)
     }
 
     if (showNotice) {
         AlertDialog(
+            modifier = androidx.compose.ui.Modifier.dialogEnter(),
             onDismissRequest = { showNotice = false },
             title = { Text("Use your Google Drive?") },
             text = {

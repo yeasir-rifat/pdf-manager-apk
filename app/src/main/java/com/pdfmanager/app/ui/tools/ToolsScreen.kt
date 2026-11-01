@@ -83,6 +83,9 @@ fun ToolsScreen(onNavigate: (String) -> Unit) {
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val results = remember(query, labels) { ToolCatalog.search(query) { labels.searchTerms(it) } }
+    var recentIds by remember { mutableStateOf(RecentTools.get(context)) }
+    // Shown above the categories only when nobody is searching
+    val recents = remember(recentIds) { RecentTools.resolve(recentIds) }
 
     val closeSearch = { searching = false; query = "" }
     // Back closes the search first, then leaves the screen
@@ -111,9 +114,13 @@ fun ToolsScreen(onNavigate: (String) -> Unit) {
             } else {
                 val open: (ToolDef) -> Unit = { tool ->
                     focus.clearFocus()
+                    recentIds = RecentTools.push(context, tool.id)
                     onNavigate(tool.route)
                 }
-                if (listMode) ToolList(results, onToolClick = open) else ToolGrid(results, onToolClick = open)
+                val shownRecents = if (searching) emptyList() else recents
+                // Category headings are hidden while searching
+                if (listMode) ToolList(results, onToolClick = open, showHeaders = !searching, recents = shownRecents)
+                else ToolGrid(results, onToolClick = open, showHeaders = !searching, recents = shownRecents)
             }
         }
     }

@@ -60,6 +60,8 @@ fun ScanScreen(onBack: (() -> Unit)?, onOpen: (String) -> Unit) {
     var pendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var pendingPages by remember { mutableStateOf(0) }
     var nameInput by remember { mutableStateOf("") }
+    // Name used when the dialog is closed without a choice (tap outside or Back), so a scan is never lost
+    var defaultName by remember { mutableStateOf("") }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         launching = false
@@ -68,14 +70,31 @@ fun ScanScreen(onBack: (() -> Unit)?, onOpen: (String) -> Unit) {
             ?: return@rememberLauncherForActivityResult
         pendingUri = pdf.uri
         pendingPages = pdf.pageCount
-        nameInput = outName("Scanned", null).removePrefix("Scanned_").removeSuffix(".pdf")
+        defaultName = stamp()
+        nameInput = defaultName
     }
 
     pendingUri?.let { uri ->
         val pages = pendingPages
         val cleaned = nameInput.trim().removeSuffix(".pdf").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+
+        // One place that saves the scan; the Save button and closing the dialog both use it
+        fun saveScan(name: String) {
+            val finalName = name.ifBlank { defaultName }
+            pendingUri = null
+            job.launch(scope) {
+                val out = OutputStore.savePdf(context, "${finalName}_scanned.pdf") { os ->
+                    (context.contentResolver.openInputStream(uri) ?: error("Cannot read the scan"))
+                        .use { it.copyTo(os) }
+                }
+                "Saved $pages ${if (pages == 1) "page" else "pages"}" to out
+            }
+        }
+
         AlertDialog(
-            onDismissRequest = { },
+            modifier = Modifier.dialogEnter(),
+            // Tap outside or Back keeps the scan under the typed (or default) name instead of trapping the person
+            onDismissRequest = { saveScan(cleaned) },
             title = { Text("Name your scan") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -84,27 +103,22 @@ fun ScanScreen(onBack: (() -> Unit)?, onOpen: (String) -> Unit) {
                         onValueChange = { nameInput = it },
                         singleLine = true,
                         label = { Text("File name") },
-                        prefix = { Text("Scanned_") },
-                        suffix = { Text(".pdf") }
+                        suffix = { Text("_scanned.pdf") }
                     )
                     Text(
-                        "$pages page${if (pages == 1) "" else "s"} will be saved as Scanned_${cleaned.ifBlank { "…" }}.pdf",
+                        "$pages page${if (pages == 1) "" else "s"} will be saved as ${cleaned.ifBlank { defaultName }}_scanned.pdf",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "If you close this window, the scan is saved with this name. Nothing is lost.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             },
             confirmButton = {
-                TextButton(enabled = cleaned.isNotBlank(), onClick = {
-                    pendingUri = null
-                    job.launch(scope) {
-                        val out = OutputStore.savePdf(context, "Scanned_$cleaned.pdf") { os ->
-                            (context.contentResolver.openInputStream(uri) ?: error("Cannot read the scan"))
-                                .use { it.copyTo(os) }
-                        }
-                        "Saved $pages scanned pages in Documents/PDF Manager" to out
-                    }
-                }) { Text("Save") }
+                TextButton(onClick = { saveScan(cleaned) }) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { pendingUri = null }) { Text("Discard") } }
         )
@@ -114,7 +128,7 @@ fun ScanScreen(onBack: (() -> Unit)?, onOpen: (String) -> Unit) {
         if (launching || job.busy) return@start
         val activity = context.findActivity()
         if (activity == null) {
-            job.fail("Could not start the scanner")
+            job.fail("Scanner could not start")
             return@start
         }
         launching = true
@@ -127,7 +141,7 @@ fun ScanScreen(onBack: (() -> Unit)?, onOpen: (String) -> Unit) {
         GmsDocumentScanning.getClient(options)
             .getStartScanIntent(activity)
             .addOnSuccessListener { launcher.launch(IntentSenderRequest.Builder(it).build()) }
-            .addOnFailureListener { launching = false; job.fail("Scanner unavailable: ${it.message}") }
+            .addOnFailureListener { launching = false; job.fail("Scanner unavailable") }
     }
 
     val scheme = MaterialTheme.colorScheme
@@ -201,7 +215,7 @@ fun ScanScreen(onBack: (() -> Unit)?, onOpen: (String) -> Unit) {
         }
 
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("Scanned_") || it.startsWith("Scan_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "scanned", "scan") }, onOpen)
     }
 }
 

@@ -4,7 +4,7 @@ import java.util.Locale
 
 /** The three Office families the app can turn into PDF, with the Google format each one is converted to first. */
 enum class OfficeKind(
-    /** Prefix of the output file name, e.g. Word_Report.pdf. */
+    /** Tool tag of the output file name (lower-cased when used), e.g. Report_word.pdf. */
     val prefix: String,
     /** What the user sees in messages, e.g. "Word". */
     val label: String,
@@ -122,10 +122,10 @@ object OfficeHelpers {
 
     // ------------------------------------------------------------ names
 
-    /** Output file name: "<Prefix>_<original name>.pdf". A missing name falls back to [fallbackStamp]. */
+    /** Output file name: "<original name>_<kind>.pdf", e.g. Report_word.pdf. A missing name falls back to [fallbackStamp]. */
     fun outputName(kind: OfficeKind, source: String?, fallbackStamp: String): String {
         val base = source?.takeIf { it.isNotBlank() }?.substringBeforeLast('.')?.trim().orEmpty()
-        return "${kind.prefix}_${base.ifEmpty { fallbackStamp }}.pdf"
+        return "${base.ifEmpty { fallbackStamp }}_${kind.prefix.lowercase()}.pdf"
     }
 
     /** Name used inside the user's Drive: neutral, so the real file name never leaves the phone. */
@@ -137,11 +137,11 @@ object OfficeHelpers {
      */
     fun resultMessage(pages: Int, driveCopyRemoved: Boolean): String {
         val head = if (pages > 0) {
-            "Created a PDF with ${if (pages == 1) "1 page" else "$pages pages"}. Saved in Documents/PDF Manager"
+            "Created a PDF (${if (pages == 1) "1 page" else "$pages pages"})"
         } else {
-            "Done. Saved in Documents/PDF Manager"
+            "Done"
         }
-        return if (driveCopyRemoved) head else "$head. The temporary Drive copy will be removed later"
+        return if (driveCopyRemoved) head else "$head. Drive copy removed later"
     }
 
     // ------------------------------------------------------------ errors
@@ -150,16 +150,16 @@ object OfficeHelpers {
     fun messageFor(httpCode: Int, reason: String?): String {
         val r = reason.orEmpty()
         return when {
-            r == "accessNotConfigured" || r == "SERVICE_DISABLED" -> "Drive API is not enabled for this app"
+            r == "accessNotConfigured" || r == "SERVICE_DISABLED" -> "Drive API is not enabled"
             r == "storageQuotaExceeded" -> "Your Google Drive storage is full"
-            r == "exportSizeLimitExceeded" -> "The converted PDF is too large (over 10 MB) for Google to export"
-            httpCode == 401 -> "Please connect your Google account again"
+            r == "exportSizeLimitExceeded" -> "Converted PDF is over 10 MB"
+            httpCode == 401 -> "Reconnect your Google account"
             httpCode == 429 || r == "rateLimitExceeded" || r == "userRateLimitExceeded" ||
-                r == "dailyLimitExceeded" -> "Google is busy, try again in a minute"
-            httpCode == 400 -> "Google could not convert this file (locked or damaged?)"
-            httpCode == 403 -> "Google did not allow this request"
-            httpCode in 500..599 -> "Google had a problem, try again"
-            else -> "Google could not finish this request"
+                r == "dailyLimitExceeded" -> "Google is busy. Try again soon"
+            httpCode == 400 -> "Can't convert. Locked or damaged?"
+            httpCode == 403 -> "Google denied the request"
+            httpCode in 500..599 -> "Google problem. Try again"
+            else -> "Google could not finish"
         }
     }
 

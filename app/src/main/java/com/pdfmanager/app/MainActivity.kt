@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PDFBoxResourceLoader.init(applicationContext)
+        com.pdfmanager.app.ui.ToolJobText.app = applicationContext
         com.pdfmanager.app.data.PrivacyCleanup.runOnce(applicationContext)
         val prefs = getSharedPreferences("ui", MODE_PRIVATE)
         PrintSessionStore.init(applicationContext)
@@ -67,6 +68,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             var themeMode by remember { mutableIntStateOf(prefs.getInt("theme", ThemeMode.SYSTEM)) }
             var dynamic by remember { mutableStateOf(prefs.getBoolean("dynamic", true)) }
+            var pureBlack by remember { mutableStateOf(PureBlackPrefs.get(applicationContext)) }
+            var accent by remember { mutableIntStateOf(AccentPrefs.get(applicationContext)) }
             val systemDark = isSystemInDarkTheme()
             val dark = when (themeMode) {
                 ThemeMode.LIGHT -> false
@@ -81,7 +84,7 @@ class MainActivity : ComponentActivity() {
                 onDispose { }
             }
 
-            PdfManagerTheme(darkTheme = dark, dynamicColor = dynamic) {
+            PdfManagerTheme(darkTheme = dark, dynamicColor = dynamic, accent = accent, pureBlack = pureBlack) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     val nav = rememberNavController()
                     // A second tap while a screen is still opening must not stack the same screen twice
@@ -160,7 +163,8 @@ class MainActivity : ComponentActivity() {
                                 onBack = back,
                                 onPrint = { uri, name ->
                                     nav.navigate("print-properties/${Uri.encode(uri)}?name=${Uri.encode(name)}")
-                                }
+                                },
+                                onTool = go
                             )
                         }
                         composable(
@@ -185,6 +189,16 @@ class MainActivity : ComponentActivity() {
                                 onThemeMode = {
                                     themeMode = it
                                     prefs.edit().putInt("theme", it).apply()
+                                },
+                                pureBlack = pureBlack,
+                                onPureBlack = {
+                                    pureBlack = it
+                                    PureBlackPrefs.set(applicationContext, it)
+                                },
+                                accent = accent,
+                                onAccent = {
+                                    accent = it
+                                    AccentPrefs.set(applicationContext, it)
                                 },
                                 dynamicColor = dynamic,
                                 onDynamicColor = {
@@ -254,7 +268,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 result.onSuccess { incomingPdf = it }
                     .onFailure {
-                        val msg = if (it.message == "Not a PDF file") "This is not a PDF file" else "Could not open this file"
+                        val msg = if (it.message == "Not a PDF file") "Not a PDF file" else "Could not open file"
                         Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
                     }
             }

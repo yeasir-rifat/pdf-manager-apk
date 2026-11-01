@@ -19,6 +19,18 @@ object ThemeMode {
     const val DARK = 2
 }
 
+/** The "Pure black dark mode" switch in Settings. It only has an effect while the dark theme is on. */
+object PureBlackPrefs {
+    private const val KEY = "pureBlack"
+
+    fun get(context: android.content.Context): Boolean =
+        context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE).getBoolean(KEY, false)
+
+    fun set(context: android.content.Context, on: Boolean) {
+        context.getSharedPreferences("ui", android.content.Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
+    }
+}
+
 /** Category accents used for icon badges. They work on both light and dark surfaces. */
 object Accent {
     val Indigo = Color(0xFF4C6EF5)
@@ -90,22 +102,52 @@ private val AppShapes = Shapes(
 )
 
 @Composable
-fun PdfManagerTheme(darkTheme: Boolean, dynamicColor: Boolean = false, content: @Composable () -> Unit) {
+fun PdfManagerTheme(
+    darkTheme: Boolean,
+    dynamicColor: Boolean = false,
+    accent: Int = 0,
+    pureBlack: Boolean = false,
+    content: @Composable () -> Unit
+) {
     val context = LocalContext.current
+    val wallpaperColors = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    // While wallpaper colors are on, the accent choice waits: the original palette is used for the fixed tokens
+    val palette = remember(darkTheme, accent, wallpaperColors) {
+        val theme = AccentThemes.get(if (wallpaperColors) 0 else accent)
+        if (darkTheme) theme.dark else theme.light
+    }
+    val staticScheme = remember(darkTheme, palette) {
+        (if (darkTheme) DarkColors else LightColors).copy(
+            primary = palette.primary, onPrimary = palette.onPrimary,
+            primaryContainer = palette.primaryContainer, onPrimaryContainer = palette.onPrimaryContainer,
+            secondaryContainer = palette.secondaryContainer, onSecondaryContainer = palette.onSecondaryContainer
+        )
+    }
+    val blackPage = darkTheme && pureBlack
+    val appColors = remember(darkTheme, palette, blackPage) {
+        val base = (if (darkTheme) DarkAppColors else LightAppColors).withNav(palette.navPill, palette.navActive)
+        if (blackPage) base.withPureBlackCards() else base
+    }
+    val baseScheme = if (wallpaperColors) {
+        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else staticScheme
+    // Pure black: the page and plain surfaces are fully black, cards are #0F0F12. Text colors are left as they are, they are bright on black.
+    val scheme = if (blackPage) {
+        baseScheme.copy(
+            background = Color.Black, surface = Color.Black, surfaceContainerLowest = Color.Black,
+            // Same card color as the tool cards, so every card on the black page matches
+            surfaceContainerLow = Color(0xFF0F0F12)
+        )
+    } else baseScheme
     val typography = remember { AppFonts.load(context)?.apply(AppTypography) ?: AppTypography }
     MaterialTheme(
-        colorScheme = when {
-            // Material You: colors taken from the wallpaper (Android 12+)
-            dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-                if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            darkTheme -> DarkColors
-            else -> LightColors
-        },
+        // With wallpaper colors on (Android 12+) the scheme comes from the wallpaper
+        colorScheme = scheme,
         typography = typography,
         shapes = AppShapes,
         content = {
             // Fixed redesign tokens (cards, bottom bar...): they ignore the wallpaper colors on purpose
-            CompositionLocalProvider(LocalAppColors provides (if (darkTheme) DarkAppColors else LightAppColors)) {
+            CompositionLocalProvider(LocalAppColors provides appColors) {
                 content()
             }
         }

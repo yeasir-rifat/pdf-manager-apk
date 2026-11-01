@@ -61,7 +61,7 @@ class UtilityHelpersTest {
 
     @Test fun quickFixThatOpens() =
         assertEquals(
-            "Rewrote the file with a clean structure (12 pages). It opens in the viewer. Saved in Documents/PDF Manager",
+            "Repaired (12 pages). Opens fine",
             RepairHelpers.summary(12, emptyList(), rebuilt = false, opens = true)
         )
 
@@ -70,20 +70,19 @@ class UtilityHelpersTest {
 
     @Test fun quickFixThatStillFailsSuggestsRebuild() =
         assertEquals(
-            "Rewrote the file with a clean structure (3 pages). The system viewer still cannot open it. " +
-                "Try Rebuild pages. Saved in Documents/PDF Manager",
+            "Repaired (3 pages). Still won't open. Try Rebuild pages",
             RepairHelpers.summary(3, emptyList(), rebuilt = false, opens = false)
         )
 
     @Test fun rebuildNamesTheLeftOutPages() =
         assertEquals(
-            "Rebuilt 5 pages. Left out 1 page that could not be read (3). It opens in the viewer. Saved in Documents/PDF Manager",
+            "Rebuilt 5 pages. Skipped 1 page (3). Opens fine",
             RepairHelpers.summary(5, listOf(3), rebuilt = true, opens = true)
         )
 
     @Test fun rebuildThatStillFailsDoesNotSuggestRebuildAgain() =
         assertEquals(
-            "Rebuilt 3 pages. The system viewer still cannot open it. Saved in Documents/PDF Manager",
+            "Rebuilt 3 pages. Still won't open in the viewer",
             RepairHelpers.summary(3, emptyList(), rebuilt = true, opens = false)
         )
 }

@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -34,6 +35,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,9 +46,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -76,7 +77,7 @@ fun FilesScreen(
     vm: LibraryViewModel
 ) {
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberAppHaptics()
     val access = rememberStorageAccess(vm)
     val granted = access.granted
 
@@ -119,6 +120,7 @@ fun FilesScreen(
         }
     }
     var showNewFolder by remember { mutableStateOf(false) }
+    var showFolders by remember { mutableStateOf(false) }
     var showNew by remember { mutableStateOf(false) }
     var folderToDelete by remember { mutableStateOf<Long?>(null) }
     var pulling by remember { mutableStateOf(false) }
@@ -135,9 +137,9 @@ fun FilesScreen(
         topBar = {
             if (selecting) {
                 TopAppBar(
-                    title = { Text("${selected.size} selected", style = MaterialTheme.typography.titleMedium) },
+                    title = { Text(stringResource(R.string.files_selected_count, selected.size), style = MaterialTheme.typography.titleMedium) },
                     navigationIcon = {
-                        IconButton(onClick = { selected.clear() }) { Icon(AppIcons.Close, "Cancel selection") }
+                        IconButton(onClick = { selected.clear() }) { Icon(AppIcons.Close, stringResource(R.string.files_cancel_selection)) }
                     },
                     actions = {
                         val allFav = selectedPdfs.isNotEmpty() && selectedPdfs.all { it.favorite }
@@ -146,29 +148,29 @@ fun FilesScreen(
                         }) {
                             Icon(
                                 if (allFav) AppIcons.Star else AppIcons.StarBorder,
-                                if (allFav) "Remove from favorites" else "Add to favorites",
+                                stringResource(if (allFav) R.string.home_fav_remove else R.string.home_fav_add),
                                 tint = if (allFav) Accent.Amber else LocalContentColor.current
                             )
                         }
                         IconButton(onClick = { Share.pdfs(context, selected.toList()) }) {
-                            Icon(AppIcons.Share, "Share")
+                            Icon(AppIcons.Share, stringResource(R.string.common_share))
                         }
                         // Print works on one PDF at a time in the first version
                         IconButton(
                             enabled = selectedPdfs.size == 1,
                             onClick = { selectedPdfs.firstOrNull()?.let { pdf -> onPrint(pdf); selected.clear() } }
                         ) {
-                            Icon(AppIcons.Print, "Print")
+                            Icon(AppIcons.Print, stringResource(R.string.common_print))
                         }
                         IconButton(onClick = { actions.deleteTargets = selectedPdfs }) {
-                            Icon(AppIcons.DeleteOutline, "Delete")
+                            Icon(AppIcons.DeleteOutline, stringResource(R.string.common_delete))
                         }
                         var more by remember { mutableStateOf(false) }
                         Box {
-                            IconButton(onClick = { more = true }) { Icon(AppIcons.MoreVert, "More") }
+                            IconButton(onClick = { more = true }) { Icon(AppIcons.MoreVert, stringResource(R.string.common_more)) }
                             DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                                 DropdownMenuItem(
-                                    text = { Text("Use in tool…") },
+                                    text = { Text(stringResource(R.string.files_use_in_tool)) },
                                     leadingIcon = { Icon(AppIcons.Handyman, null) },
                                     onClick = {
                                         more = false
@@ -177,12 +179,12 @@ fun FilesScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Select all") },
+                                    text = { Text(stringResource(R.string.common_select_all)) },
                                     leadingIcon = { Icon(AppIcons.SelectAll, null) },
                                     onClick = { more = false; selected.clear(); selected.addAll(pdfs.map { it.uri }) }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Move to folder") },
+                                    text = { Text(stringResource(R.string.files_move_to_folder)) },
                                     leadingIcon = { Icon(AppIcons.Folder, null) },
                                     onClick = { more = false; actions.moveTargets = selected.toList() }
                                 )
@@ -197,7 +199,7 @@ fun FilesScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Image(painterResource(R.drawable.app_logo), null, Modifier.size(32.dp).clip(RoundedCornerShape(percent = 22)))
                             Spacer(Modifier.width(10.dp))
-                            Text("PDF Manager", style = MaterialTheme.typography.titleLarge)
+                            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -225,7 +227,7 @@ fun FilesScreen(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     shape = CircleShape
                 ) {
-                    Icon(AppIcons.Add, contentDescription = "New")
+                    Icon(AppIcons.Add, contentDescription = stringResource(R.string.common_new))
                 }
             }
         }
@@ -236,55 +238,42 @@ fun FilesScreen(
         }
 
         Column(Modifier.fillMaxSize().padding(padding)) {
+            // All, Starred, Recent and one Folders chip. The folder list itself is in a sheet, so many folders never crowd this row.
+            val f = filter
+            val inFolders = f != null && f >= 0L
+            val folderChipLabel = when {
+                f == 0L -> stringResource(R.string.files_unfiled)
+                inFolders -> folders.firstOrNull { it.id == f }?.name ?: stringResource(R.string.files_folders)
+                else -> stringResource(R.string.files_folders)
+            }
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item {
-                    FilterChip(filter == null, { vm.filter.value = null }, { Text("All") },
+                    FilterChip(f == null, { vm.filter.value = null }, { Text(stringResource(R.string.files_all)) },
                         shape = RoundedCornerShape(12.dp))
                 }
                 item {
                     FilterChip(
-                        filter == -1L, { vm.filter.value = -1L }, { Text("Starred") },
+                        f == -1L, { vm.filter.value = -1L }, { Text(stringResource(R.string.files_starred)) },
                         leadingIcon = { Icon(AppIcons.Star, null, Modifier.size(18.dp)) },
                         shape = RoundedCornerShape(12.dp)
                     )
                 }
                 item {
                     FilterChip(
-                        filter == -2L, { vm.filter.value = -2L }, { Text("Recent") },
+                        f == -2L, { vm.filter.value = -2L }, { Text(stringResource(R.string.files_recent)) },
                         leadingIcon = { Icon(AppIcons.History, null, Modifier.size(18.dp)) },
                         shape = RoundedCornerShape(12.dp)
                     )
                 }
                 item {
-                    FilterChip(filter == 0L, { vm.filter.value = 0L }, { Text("Unfiled") },
-                        shape = RoundedCornerShape(12.dp))
-                }
-                items(folders, key = { it.id }) { f ->
-                    // Tap to filter, long-press to delete the folder (files stay on the device)
                     FilterChip(
-                        selected = filter == f.id,
-                        onClick = { vm.filter.value = f.id },
-                        label = {
-                            Text(
-                                f.name,
-                                modifier = Modifier.combinedClickable(
-                                    onClick = { vm.filter.value = f.id },
-                                    onLongClick = { folderToDelete = f.id }
-                                )
-                            )
-                        },
+                        selected = inFolders, onClick = { showFolders = true },
+                        label = { Text(folderChipLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = { Icon(AppIcons.Folder, null, Modifier.size(18.dp)) },
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-                item {
-                    AssistChip(
-                        onClick = { showNewFolder = true },
-                        label = { Text("New folder") },
-                        leadingIcon = { Icon(AppIcons.CreateNewFolder, null, Modifier.size(18.dp)) },
+                        trailingIcon = { Icon(AppIcons.KeyboardArrowDown, null, Modifier.size(18.dp)) },
                         shape = RoundedCornerShape(12.dp)
                     )
                 }
@@ -306,14 +295,14 @@ fun FilesScreen(
                             else -> AppIcons.PictureAsPdf
                         },
                         title = when {
-                            searching -> "No matches"
-                            noFavorites -> "No favorites yet"
-                            noRecent -> "No recent files"
-                            else -> "No PDFs here"
+                            searching -> stringResource(R.string.files_no_matches)
+                            noFavorites -> stringResource(R.string.files_no_favorites)
+                            noRecent -> stringResource(R.string.files_no_recent)
+                            else -> stringResource(R.string.files_no_pdfs)
                         },
-                        message = indexing?.takeIf { searching }?.let { "Still reading PDFs: ${it.done} of ${it.total}" } ?: "",
+                        message = indexing?.takeIf { searching }?.let { stringResource(R.string.files_indexing, it.done, it.total) } ?: "",
                         action = if (searching || noFavorites || noRecent) null else ({
-                            PrimaryButton("Scan a document", icon = AppIcons.DocumentScanner, onClick = { onNavigate("scan") })
+                            PrimaryButton(stringResource(R.string.files_scan_a_document), icon = AppIcons.DocumentScanner, onClick = { onNavigate("scan") })
                         })
                     )
                 } else {
@@ -327,21 +316,22 @@ fun FilesScreen(
                         if (filter == -2L && pdfs.isNotEmpty() && !selecting) {
                             item(key = "clear-recent", span = { GridItemSpan(maxLineSpan) }) {
                                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                                    TextButton(onClick = { vm.clearRecent() }) { Text("Clear recent list") }
+                                    TextButton(onClick = { vm.clearRecent() }) { Text(stringResource(R.string.files_clear_recent)) }
                                 }
                             }
                         }
                         if (!selecting && pdfs.isNotEmpty()) {
                             item(key = "files-label", span = { GridItemSpan(maxLineSpan) }) {
+                                val sectionName = when {
+                                    query.isNotBlank() -> stringResource(R.string.files_label_results)
+                                    filter == -1L -> stringResource(R.string.files_label_favorites)
+                                    filter == -2L -> stringResource(R.string.files_recent)
+                                    filter == 0L -> stringResource(R.string.files_unfiled)
+                                    filter != null -> folders.firstOrNull { it.id == filter }?.name ?: stringResource(R.string.files_label_folder)
+                                    else -> stringResource(R.string.files_label_all)
+                                }
                                 SectionLabel(
-                                    when {
-                                        query.isNotBlank() -> "Results"
-                                        filter == -1L -> "Favorites"
-                                        filter == -2L -> "Recent"
-                                        filter == 0L -> "Unfiled"
-                                        filter != null -> folders.firstOrNull { it.id == filter }?.name ?: "Folder"
-                                        else -> "All files"
-                                    } + " · ${pdfs.size}",
+                                    stringResource(R.string.files_section_count, sectionName, pdfs.size),
                                     Modifier.padding(top = 4.dp)
                                 )
                             }
@@ -350,7 +340,7 @@ fun FilesScreen(
                             item(key = "index-status", span = { GridItemSpan(maxLineSpan) }) {
                                 val p = indexing ?: return@item
                                 FitText(
-                                    "Reading PDFs for text search: ${p.done} of ${p.total}",
+                                    stringResource(R.string.files_indexing_status, p.done, p.total),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -365,7 +355,7 @@ fun FilesScreen(
                                 selected = isSelected,
                                 selecting = selecting,
                                 onClick = { if (selecting) toggle() else onOpen(pdf.uri) },
-                                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); toggle() },
+                                onLongClick = { haptics.confirm(); toggle() },
                                 onFavorite = { vm.setFavorite(listOf(pdf.uri), !pdf.favorite) },
                                 onShare = { Share.pdfs(context, listOf(pdf.uri)) },
                                 onRename = { actions.renameTarget = pdf },
@@ -391,10 +381,10 @@ fun FilesScreen(
         ) {
             Column(Modifier.padding(bottom = 24.dp)) {
                 listOf(
-                    Triple("Scan document", AppIcons.DocumentScanner, "scan"),
-                    Triple("Images to PDF", AppIcons.Image, "img2pdf"),
-                    Triple("Merge PDFs", AppIcons.MergeType, "merge"),
-                    Triple("New folder", AppIcons.CreateNewFolder, "")
+                    Triple(stringResource(R.string.tool_scan), AppIcons.DocumentScanner, "scan"),
+                    Triple(stringResource(R.string.tool_img2pdf), AppIcons.Image, "img2pdf"),
+                    Triple(stringResource(R.string.tool_merge), AppIcons.MergeType, "merge"),
+                    Triple(stringResource(R.string.files_new_folder), AppIcons.CreateNewFolder, "")
                 ).forEach { (label, icon, route) ->
                     ListItem(
                         headlineContent = { Text(label, style = MaterialTheme.typography.bodyLarge) },
@@ -410,24 +400,68 @@ fun FilesScreen(
         }
     }
 
+    if (showFolders) {
+        ModalBottomSheet(onDismissRequest = { showFolders = false }, containerColor = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                Text(
+                    stringResource(R.string.files_folders),
+                    Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.files_unfiled)) },
+                    leadingContent = { Icon(AppIcons.Folder, null) },
+                    trailingContent = { if (filter == 0L) Icon(AppIcons.Check, null, tint = MaterialTheme.colorScheme.primary) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable { vm.filter.value = 0L; showFolders = false }
+                )
+                folders.forEach { folder ->
+                    ListItem(
+                        headlineContent = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        leadingContent = { Icon(AppIcons.Folder, null) },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (filter == folder.id) Icon(AppIcons.Check, null, tint = MaterialTheme.colorScheme.primary)
+                                // Opens the same "Delete folder?" dialog as before; the files stay on the device
+                                IconButton(onClick = { showFolders = false; folderToDelete = folder.id }) {
+                                    Icon(AppIcons.DeleteOutline, stringResource(R.string.common_delete))
+                                }
+                            }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable { vm.filter.value = folder.id; showFolders = false }
+                    )
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.files_new_folder)) },
+                    leadingContent = { Icon(AppIcons.CreateNewFolder, null, tint = MaterialTheme.colorScheme.primary) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable { showFolders = false; showNewFolder = true }
+                )
+            }
+        }
+    }
+
     if (showNewFolder) {
         var name by remember { mutableStateOf("") }
         AlertDialog(
+            modifier = Modifier.dialogEnter(),
             onDismissRequest = { showNewFolder = false },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("New folder") },
+            title = { Text(stringResource(R.string.files_new_folder)) },
             text = {
                 OutlinedTextField(
-                    name, { name = it }, singleLine = true, label = { Text("Name") },
+                    name, { name = it }, singleLine = true, label = { Text(stringResource(R.string.files_folder_name)) },
                     shape = RoundedCornerShape(14.dp)
                 )
             },
             confirmButton = {
                 TextButton(enabled = name.isNotBlank(), onClick = { vm.addFolder(name); showNewFolder = false }) {
-                    Text("Create")
+                    Text(stringResource(R.string.common_create))
                 }
             },
-            dismissButton = { TextButton(onClick = { showNewFolder = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showNewFolder = false }) { Text(stringResource(R.string.common_cancel)) } }
         )
     }
 
@@ -435,16 +469,17 @@ fun FilesScreen(
 
     folderToDelete?.let { id ->
         AlertDialog(
+            modifier = Modifier.dialogEnter(),
             onDismissRequest = { folderToDelete = null },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("Delete folder?") },
-            text = { Text("The PDF files stay on your device and move back to Unfiled.") },
+            title = { Text(stringResource(R.string.files_delete_folder_title)) },
+            text = { Text(stringResource(R.string.files_delete_folder_msg)) },
             confirmButton = {
                 TextButton(onClick = { vm.deleteFolder(id); folderToDelete = null }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { folderToDelete = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { folderToDelete = null }) { Text(stringResource(R.string.common_cancel)) } }
         )
     }
 }
@@ -491,7 +526,7 @@ private fun pdfMeta(pdf: PdfEntity): String {
 }
 
 @Composable
-private fun PdfMenu(
+internal fun PdfMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     onShare: () -> Unit,
@@ -503,32 +538,32 @@ private fun PdfMenu(
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(
-            text = { Text("Use in tool…") },
+            text = { Text(stringResource(R.string.files_use_in_tool)) },
             leadingIcon = { Icon(AppIcons.Handyman, null) },
             onClick = { onDismiss(); onUseInTool() }
         )
         DropdownMenuItem(
-            text = { Text("Share") },
+            text = { Text(stringResource(R.string.common_share)) },
             leadingIcon = { Icon(AppIcons.Share, null) },
             onClick = { onDismiss(); onShare() }
         )
         DropdownMenuItem(
-            text = { Text("Print") },
+            text = { Text(stringResource(R.string.common_print)) },
             leadingIcon = { Icon(AppIcons.Print, null) },
             onClick = { onDismiss(); onPrint() }
         )
         DropdownMenuItem(
-            text = { Text("Rename") },
+            text = { Text(stringResource(R.string.common_rename)) },
             leadingIcon = { Icon(AppIcons.DriveFileRenameOutline, null) },
             onClick = { onDismiss(); onRename() }
         )
         DropdownMenuItem(
-            text = { Text("Move to folder") },
+            text = { Text(stringResource(R.string.files_move_to_folder)) },
             leadingIcon = { Icon(AppIcons.Folder, null) },
             onClick = { onDismiss(); onMove() }
         )
         DropdownMenuItem(
-            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+            text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) },
             leadingIcon = { Icon(AppIcons.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
             onClick = { onDismiss(); onDelete() }
         )
@@ -554,9 +589,13 @@ private fun PdfRow(
 ) {
     val meta = pdfMeta(pdf)
     var menu by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
     AppCard(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        Modifier.fillMaxWidth().pressScale(interaction).clip(RoundedCornerShape(AppDimens.cardRadius))
+            .combinedClickable(
+                interactionSource = interaction, indication = LocalIndication.current,
+                onClick = onClick, onLongClick = onLongClick
+            ),
         highlighted = selected
     ) {
         Row(
@@ -597,12 +636,12 @@ private fun PdfRow(
                 IconButton(onClick = onFavorite) {
                     Icon(
                         if (pdf.favorite) AppIcons.Star else AppIcons.StarBorder,
-                        contentDescription = if (pdf.favorite) "Remove from favorites" else "Add to favorites",
+                        contentDescription = stringResource(if (pdf.favorite) R.string.home_fav_remove else R.string.home_fav_add),
                         tint = if (pdf.favorite) Accent.Amber else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Box {
-                    IconButton(onClick = { menu = true }) { Icon(AppIcons.MoreVert, contentDescription = "More") }
+                    IconButton(onClick = { menu = true }) { Icon(AppIcons.MoreVert, contentDescription = stringResource(R.string.common_more)) }
                     PdfMenu(menu, { menu = false }, onShare, onRename, onMove, onUseInTool, onPrint, onDelete)
                 }
             }
@@ -629,16 +668,20 @@ private fun PdfGridCard(
 ) {
     val meta = pdfMeta(pdf)
     var menu by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
     AppCard(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        Modifier.fillMaxWidth().pressScale(interaction).clip(RoundedCornerShape(AppDimens.cardRadius))
+            .combinedClickable(
+                interactionSource = interaction, indication = LocalIndication.current,
+                onClick = onClick, onLongClick = onLongClick
+            ),
         highlighted = selected
     ) {
         Box {
             PdfThumb(
                 pdf.uri, Modifier.fillMaxWidth().aspectRatio(0.80f),
                 stamp = "${pdf.modifiedSec}-${pdf.sizeBytes}", widthPx = 360,
-                shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+                shape = RoundedCornerShape(topStart = AppDimens.cardRadius, topEnd = AppDimens.cardRadius)
             )
             if (selected) {
                 Box(
@@ -653,7 +696,7 @@ private fun PdfGridCard(
                 IconButton(onClick = onFavorite, modifier = Modifier.align(Alignment.TopEnd).size(40.dp)) {
                     Icon(
                         if (pdf.favorite) AppIcons.Star else AppIcons.StarBorder,
-                        contentDescription = if (pdf.favorite) "Remove from favorites" else "Add to favorites",
+                        contentDescription = stringResource(if (pdf.favorite) R.string.home_fav_remove else R.string.home_fav_add),
                         tint = if (pdf.favorite) Accent.Amber else Color.Gray,
                         modifier = Modifier.size(22.dp)
                     )
@@ -681,7 +724,7 @@ private fun PdfGridCard(
             if (!selecting) {
                 Box {
                     IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) {
-                        Icon(AppIcons.MoreVert, contentDescription = "More")
+                        Icon(AppIcons.MoreVert, contentDescription = stringResource(R.string.common_more))
                     }
                     PdfMenu(menu, { menu = false }, onShare, onRename, onMove, onUseInTool, onPrint, onDelete)
                 }
@@ -694,12 +737,12 @@ private fun PdfGridCard(
 private fun SortMenuButton(sort: SortMode, onSort: (SortMode) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { open = true }) { Icon(AppIcons.Sort, contentDescription = "Sort") }
+        IconButton(onClick = { open = true }) { Icon(AppIcons.Sort, contentDescription = stringResource(R.string.common_sort)) }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             listOf(
-                SortMode.NAME to "Name (A–Z)",
-                SortMode.NEWEST to "Newest first",
-                SortMode.LARGEST to "Largest first"
+                SortMode.NAME to stringResource(R.string.settings_sort_name),
+                SortMode.NEWEST to stringResource(R.string.settings_sort_newest),
+                SortMode.LARGEST to stringResource(R.string.settings_sort_largest)
             ).forEach { (mode, label) ->
                 DropdownMenuItem(
                     text = { Text(label) },
@@ -725,19 +768,48 @@ private fun SearchPill(
     onSort: (SortMode) -> Unit,
     focusRequester: FocusRequester
 ) {
-    Surface(
-        Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().height(56.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Row(Modifier.padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.app_logo_mono), contentDescription = null, modifier = Modifier.size(28.dp), colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(MaterialTheme.colorScheme.onSurface))
+    val colors = AppTheme.colors
+    Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+        // Same header as Home and Tools: logo and name, 64dp high. The view and sort actions sit on its right.
+        Row(
+            Modifier.fillMaxWidth().height(64.dp).padding(start = 16.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painterResource(R.drawable.app_logo), contentDescription = null,
+                modifier = Modifier.size(32.dp).clip(RoundedCornerShape(percent = 22))
+            )
             Spacer(Modifier.width(10.dp))
+            Text(
+                stringResource(R.string.app_name),
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onToggleGrid) {
+                Icon(
+                    if (gridMode) AppIcons.ViewAgenda else AppIcons.GridView,
+                    contentDescription = stringResource(if (gridMode) R.string.tools_view_list else R.string.tools_view_grid)
+                )
+            }
+            SortMenuButton(sort, onSort)
+        }
+        // Search pill, the same look and height as the one on Home
+        Row(
+            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp).fillMaxWidth().height(52.dp)
+                .clip(CircleShape)
+                .background(colors.toolCard)
+                .border(AppDimens.hairline, colors.cardBorder, CircleShape)
+                .padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(AppIcons.Search, contentDescription = null, tint = colors.textSecondary)
+            Spacer(Modifier.width(12.dp))
             androidx.compose.foundation.text.BasicTextField(
                 value = query,
                 onValueChange = onQuery,
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.textPrimary),
                 cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                 modifier = Modifier.weight(1f).focusRequester(focusRequester),
                 decorationBox = { inner ->
@@ -745,7 +817,7 @@ private fun SearchPill(
                         if (query.isEmpty()) {
                             Text(
                                 stringResource(R.string.files_search_hint), style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = colors.textSecondary, maxLines = 1
                             )
                         }
                         inner()
@@ -754,14 +826,6 @@ private fun SearchPill(
             )
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQuery("") }) { Icon(AppIcons.Close, stringResource(R.string.tools_search_clear)) }
-            } else {
-                IconButton(onClick = onToggleGrid) {
-                    Icon(
-                        if (gridMode) AppIcons.ViewAgenda else AppIcons.GridView,
-                        contentDescription = if (gridMode) "List view" else "Grid view"
-                    )
-                }
-                SortMenuButton(sort, onSort)
             }
         }
     }

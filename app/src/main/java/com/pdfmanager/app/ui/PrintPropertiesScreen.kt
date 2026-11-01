@@ -12,7 +12,9 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -182,8 +184,6 @@ fun PrintPropertiesScreen(
     }
     // Remember the options for next time
     LaunchedEffect(settings) { PrintDefaults.save(context, settings) }
-    // Which kind of printer (most printers are non-duplex, so that is the starting choice): decides whether Auto sides (duplex) or Manual Sides (non-duplex) can be used.
-    var nonDuplex by rememberSaveable(uriString) { mutableStateOf(settings.manualDuplex == ManualDuplexChoice.ON || settings.duplexMode == DuplexChoice.ONE_SIDED) }
     var generalOpen by rememberSaveable { mutableStateOf(PrintDefaults.section(context, "general", true)) }
     LaunchedEffect(generalOpen) { PrintDefaults.saveSection(context, "general", generalOpen) }
     var paperOpen by rememberSaveable { mutableStateOf(PrintDefaults.section(context, "paper", true)) }
@@ -280,9 +280,9 @@ fun PrintPropertiesScreen(
             val prepared = outcome.getOrNull()
             if (prepared == null) {
                 val message = when (outcome.exceptionOrNull()) {
-                    is InvalidPasswordException -> "This PDF is password protected. Unlock it in Tools first."
-                    is OutOfMemoryError -> "This PDF is too large to prepare with these options"
-                    else -> "Could not prepare the PDF for printing"
+                    is InvalidPasswordException -> "PDF is locked. Unlock it first"
+                    is OutOfMemoryError -> "PDF too large for these options"
+                    else -> "Could not prepare the PDF"
                 }
                 snackbar.showSnackbar(message)
             } else {
@@ -330,14 +330,21 @@ fun PrintPropertiesScreen(
             SessionPhase.PRINTING_2 -> "Step 2 of 2: front sides"
             else -> "Printing stopped"
         }
+        // One line under the title: what has happened so far
+        val subtitle = when (phase) {
+            SessionPhase.PRINTING_1 -> "The back sides are being printed now."
+            SessionPhase.READY_2 -> "The back sides are printed. The front sides come next."
+            SessionPhase.PRINTING_2 -> "The front sides are being printed now."
+            else -> "The printer stopped before this step was finished."
+        }
         val message = when (phase) {
             SessionPhase.PRINTING_1 -> "Printing ${mySession.passTotal} sheets. When done, turn the paper over, put it back, then tap \"Print step 2\"."
             SessionPhase.READY_2 -> "Turn the paper over, put it back, then tap \"Print step 2\"."
             SessionPhase.PRINTING_2 -> "Printing the front sides on the same ${mySession.passTotal} sheets."
-            else -> "This step stopped."
+            else -> "Pick up from the sheet where it stopped, or print this step again from the start."
         }
         val openResume = { resumeText = ""; resumeOpen = true }
-        StepDialog(title = title, onDismiss = { hideDialog = true }) {
+        StepDialog(title = title, subtitle = subtitle, onDismiss = { hideDialog = true }) {
             Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (phase == SessionPhase.PRINTING_2 && mySession.test) {
                 Text(
@@ -382,7 +389,11 @@ fun PrintPropertiesScreen(
         if (resumeOpen) {
             val done = resumeText.toIntOrNull()
             val valid = done != null && done in 0 until mySession.passTotal
-            StepDialog(title = "Sheets already printed", onDismiss = { resumeOpen = false }) {
+            StepDialog(
+                title = "Sheets already printed",
+                subtitle = "Count the sheets that came out right. Printing continues after them.",
+                onDismiss = { resumeOpen = false }
+            ) {
                 OutlinedTextField(
                     value = resumeText,
                     onValueChange = { resumeText = it.filter { c -> c.isDigit() }.take(4) },
@@ -519,7 +530,7 @@ fun PrintPropertiesScreen(
                     OutlinedButton(
                         onClick = {
                             if (!PrintServices.openSettings(context)) {
-                                scope.launch { snackbar.showSnackbar("This device has no print settings screen") }
+                                scope.launch { snackbar.showSnackbar("No print settings on this device") }
                             }
                         },
                         modifier = Modifier.weight(1f)
@@ -581,44 +592,19 @@ fun PrintPropertiesScreen(
                             settings.colorMode
                         ) { settings = settings.copy(colorMode = it) }
                     }
-                    OptionRow("Your printer type") {
-                        ChipRow(
-                            listOf(false to "Duplex", true to "Non-duplex"),
-                            nonDuplex
-                        ) { nonDuplexChoice ->
-                            nonDuplex = nonDuplexChoice
-                            settings = if (nonDuplexChoice) {
-                                settings.copy(duplexMode = DuplexChoice.ONE_SIDED)
-                            } else {
-                                settings.copy(manualDuplex = ManualDuplexChoice.OFF, duplexMode = DuplexChoice.DEFAULT)
-                            }
-                        }
-                    }
-                    OptionRow("Auto sides (Duplex printer)") {
-                        ChipRow(
-                            listOf(
-                                DuplexChoice.DEFAULT to "Default",
-                                DuplexChoice.ONE_SIDED to "One side",
-                                DuplexChoice.LONG_EDGE to "Both sides"
-                            ),
-                            settings.duplexMode,
-                            enabled = !nonDuplex
-                        ) { settings = settings.copy(duplexMode = it) }
-                    }
-                    OptionRow("Manual Sides (Non-duplex printer)") {
-                        ChipRow(
-                            listOf(
-                                ManualDuplexChoice.OFF to "One side",
-                                ManualDuplexChoice.ON to "Both sides"
-                            ),
-                            settings.manualDuplex,
-                            enabled = nonDuplex
-                        ) { settings = settings.copy(manualDuplex = it) }
+                    OptionRow("Sides") {
+                        SidesPicker(SidesChoice.of(settings)) { settings = it.applyTo(settings) }
                     }
                 }
 
-                // 6. Layout and marks (Step 9)
-                SettingsGroup("Layout & marks", AppIcons.GridView, layoutOpen, { layoutOpen = !layoutOpen }) {
+                // 6. Advanced: layout and marks (closed until opened)
+                SettingsGroup(
+                    "Advanced",
+                    AppIcons.GridView,
+                    layoutOpen,
+                    { layoutOpen = !layoutOpen },
+                    hint = "Several pages on one sheet, booklet, page numbers"
+                ) {
                     OptionRow("Pages on each sheet") {
                         ChipRow(
                             listOf(
@@ -663,17 +649,25 @@ private fun SettingsGroup(
     icon: ImageVector,
     expanded: Boolean,
     onToggle: () -> Unit,
+    hint: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     AppCard(Modifier.fillMaxWidth()) {
-        Column {
+        Column(Modifier.animateContentSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                    if (hint != null && !expanded) Text(
+                        hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 IconButton(onClick = onToggle) {
                     Icon(
                         if (expanded) AppIcons.ExpandLess else AppIcons.ExpandMore,
@@ -687,6 +681,41 @@ private fun SettingsGroup(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     content = content
                 )
+            }
+        }
+    }
+}
+
+/** The four ways to print sides, one tap each, with a short line saying who it is for. */
+@Composable
+private fun SidesPicker(selected: SidesChoice, onSelect: (SidesChoice) -> Unit) {
+    val options = listOf(
+        Triple(SidesChoice.PRINTER_DEFAULT, "Printer default", "Use whatever the printer is set to"),
+        Triple(SidesChoice.ONE_SIDE, "One side", "Print on the front of each sheet only"),
+        Triple(SidesChoice.BOTH_AUTO, "Both sides, automatic", "For printers that print both sides by themselves"),
+        Triple(
+            SidesChoice.BOTH_MANUAL, "Both sides, I turn the paper",
+            "For other printers: back sides first, then put the paper back for the front sides"
+        )
+    )
+    Column {
+        options.forEach { (choice, label, hint) ->
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    .selectable(
+                        selected = selected == choice,
+                        onClick = { onSelect(choice) },
+                        role = androidx.compose.ui.semantics.Role.RadioButton
+                    )
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(selected = selected == choice, onClick = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(label, style = MaterialTheme.typography.bodyLarge)
+                    Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
@@ -720,7 +749,12 @@ private fun CopiesStepper(value: Int, enabled: Boolean, onChange: (Int) -> Unit)
 
 /** Dialog with the title and text on one left edge and full-width actions below. */
 @Composable
-private fun StepDialog(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+private fun StepDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    subtitle: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(
@@ -728,6 +762,11 @@ private fun StepDialog(title: String, onDismiss: () -> Unit, content: @Composabl
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 content = {
                     Text(title, style = MaterialTheme.typography.headlineSmall)
+                    if (subtitle != null) Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     content()
                 }
             )

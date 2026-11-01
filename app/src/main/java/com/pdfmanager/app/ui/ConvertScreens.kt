@@ -79,18 +79,7 @@ fun PdfToTextScreen(onBack: () -> Unit) {
     val job = remember { ToolJob() }
     val chosen = rememberChosenPages(ranges, total)
 
-    ToolScaffold("PDF to Text", onBack) {
-        PdfPickerButton(picked) { picked = it; preview = null }
-        PagesState(picked, pages)
-        if (picked != null && total > 0) {
-            OptionCard("Pages") { PageRangeField(ranges, { ranges = it }, total) }
-            OptionCard("Reading order") {
-                ChipRow(listOf(false to "Normal", true to "By position"), byPosition) { byPosition = it }
-            }
-            OptionCard("Page marks") {
-                ChipRow(listOf(false to "Off", true to "On"), marks) { marks = it }
-            }
-        }
+    ToolScaffold("PDF to Text", onBack, bottomBar = {
         PrimaryButton(
             "Extract text", icon = AppIcons.Description,
             enabled = picked != null && chosen != null && chosen.count > 0 && !job.busy,
@@ -115,13 +104,25 @@ fun PdfToTextScreen(onBack: () -> Unit) {
                         if (r.text.length <= ConvertHelpers.MAX_COPY_CHARS) r.text else null
                     )
                     val words = ConvertHelpers.wordCount(r.text)
-                    var msg = "Text of ${ConvertHelpers.plural(r.pagesRead, "page")} " +
+                    var msg = "Text from ${ConvertHelpers.plural(r.pagesRead, "page")} " +
                         "(${ConvertHelpers.plural(words, "word")})"
-                    if (r.emptyPages > 0) msg += ". ${ConvertHelpers.plural(r.emptyPages, "page")} had no text"
-                    "$msg. Saved in Documents/PDF Manager" to out
+                    if (r.emptyPages > 0) msg += ", ${ConvertHelpers.plural(r.emptyPages, "page")} empty"
+                    msg to out
                 }
             }
         )
+    }) {
+        PdfPickerButton(picked) { picked = it; preview = null }
+        PagesState(picked, pages)
+        if (picked != null && total > 0) {
+            OptionCard("Pages") { PageRangeField(ranges, { ranges = it }, total) }
+            OptionCard("Reading order") {
+                ChipRow(listOf(false to "Normal", true to "By position"), byPosition) { byPosition = it }
+            }
+            OptionCard("Page marks") {
+                ChipRow(listOf(false to "Off", true to "On"), marks) { marks = it }
+            }
+        }
         JobStatus(job, onOpen = { Share.view(context, it, "text/plain") }, mime = "text/plain", openIcon = AppIcons.Description)
         if (!job.busy && !job.failed && job.result != null) preview?.let { TextPreviewCard(it) }
         if (picked == null) RecentPdfsStrip { picked = it }
@@ -143,18 +144,7 @@ fun ExtractImagesScreen(onBack: () -> Unit) {
     val job = remember { ToolJob() }
     val chosen = rememberChosenPages(ranges, total)
 
-    ToolScaffold("Extract images", onBack) {
-        PdfPickerButton(picked) { picked = it }
-        PagesState(picked, pages)
-        if (picked != null && total > 0) {
-            OptionCard("Pages") { PageRangeField(ranges, { ranges = it }, total) }
-            OptionCard("Format") {
-                ChipRow(listOf(false to "JPG", true to "PNG"), png) { png = it }
-            }
-            OptionCard("Smallest image") {
-                ChipRow(listOf(0 to "Any", 64 to "64 px", 128 to "128 px", 256 to "256 px"), minPx) { minPx = it }
-            }
-        }
+    ToolScaffold("Extract images", onBack, bottomBar = {
         PrimaryButton(
             "Extract images", icon = AppIcons.ExtractImages,
             enabled = picked != null && chosen != null && chosen.count > 0 && !job.busy,
@@ -166,17 +156,31 @@ fun ExtractImagesScreen(onBack: () -> Unit) {
                 job.launch(scope) {
                     val r = PdfConvert.extractImages(context, p.uri, sel, asPng, min, p.name) { done, n, saved ->
                         job.progress = "Page $done of $n · ${ConvertHelpers.plural(saved, "image")}"
+                        job.fraction = done.toFloat() / n.coerceAtLeast(1)
                     }
                     var msg = "Saved ${ConvertHelpers.plural(r.saved, "image")} from ${ConvertHelpers.plural(r.pagesRead, "page")}"
                     val notes = listOfNotNull(
                         if (r.skippedSmall > 0) "${ConvertHelpers.count(r.skippedSmall)} small skipped" else null,
-                        if (r.skippedFailed > 0) "${ConvertHelpers.count(r.skippedFailed)} could not be read" else null
+                        if (r.skippedFailed > 0) "${ConvertHelpers.count(r.skippedFailed)} unreadable" else null
                     )
                     if (notes.isNotEmpty()) msg += " (${notes.joinToString(", ")})"
-                    "$msg. Saved in Pictures/PDF Manager" to null
+                    job.savedIn = PICTURES_FOLDER
+                    msg to null
                 }
             }
         )
+    }) {
+        PdfPickerButton(picked) { picked = it }
+        PagesState(picked, pages)
+        if (picked != null && total > 0) {
+            OptionCard("Pages") { PageRangeField(ranges, { ranges = it }, total) }
+            OptionCard("Format") {
+                ChipRow(listOf(false to "JPG", true to "PNG"), png) { png = it }
+            }
+            OptionCard("Smallest image") {
+                ChipRow(listOf(0 to "Any", 64 to "64 px", 128 to "128 px", 256 to "256 px"), minPx) { minPx = it }
+            }
+        }
         JobStatus(job)
         if (picked == null) RecentPdfsStrip { picked = it }
     }
@@ -221,7 +225,29 @@ fun TextToPdfScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val fileState = loaded
     val source: String = if (mode == 0) typed else (fileState as? FileText.Ok)?.text ?: ""
 
-    ToolScaffold("Text to PDF", onBack) {
+    ToolScaffold("Text to PDF", onBack, bottomBar = {
+        PrimaryButton(
+            "Create PDF", icon = AppIcons.PictureAsPdf,
+            enabled = source.isNotBlank() && !job.busy,
+            onClick = {
+                val text = source
+                val sheet = PdfConvert.papers[paper]
+                val m = margin
+                val f = family
+                val size = fontSize
+                val name = outName("Text", if (mode == 1) file?.name else null)
+                job.launch(scope) {
+                    var count = 0
+                    val out = OutputStore.savePdf(context, name) { os ->
+                        count = PdfConvert.textToPdf(text, os, sheet, size, m, f) { done, n ->
+                            job.progress = "Page $done of $n"
+                        }
+                    }
+                    "Created a PDF (${ConvertHelpers.plural(count, "page")})" to out
+                }
+            }
+        )
+    }) {
         ChipRow(listOf(0 to "Type or paste", 1 to "Text file"), mode) { mode = it }
         if (mode == 0) {
             OutlinedTextField(
@@ -255,28 +281,7 @@ fun TextToPdfScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             ) { family = it }
             StepperRow("Font size", fontSize, 8..32) { fontSize = it }
         }
-        PrimaryButton(
-            "Create PDF", icon = AppIcons.PictureAsPdf,
-            enabled = source.isNotBlank() && !job.busy,
-            onClick = {
-                val text = source
-                val sheet = PdfConvert.papers[paper]
-                val m = margin
-                val f = family
-                val size = fontSize
-                val name = outName("Text", if (mode == 1) file?.name else null)
-                job.launch(scope) {
-                    var count = 0
-                    val out = OutputStore.savePdf(context, name) { os ->
-                        count = PdfConvert.textToPdf(text, os, sheet, size, m, f) { done, n ->
-                            job.progress = "Page $done of $n"
-                        }
-                    }
-                    "Created a PDF with ${ConvertHelpers.plural(count, "page")}. Saved in Documents/PDF Manager" to out
-                }
-            }
-        )
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("Text_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "text") }, onOpen)
     }
 }

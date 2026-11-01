@@ -79,7 +79,31 @@ fun EditMetadataScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val current = MetaFields(title, author, subject, keywords)
     val changed = ok != null && !MetadataHelpers.same(original, current)
 
-    ToolScaffold("Edit metadata", onBack) {
+    ToolScaffold("Edit metadata", onBack, bottomBar = {
+        PrimaryButton(
+            if (mode == 0) "Save metadata" else "Remove metadata",
+            icon = if (mode == 0) AppIcons.DriveFileRenameOutline else AppIcons.DeleteOutline,
+            enabled = ok != null && !job.busy && (if (mode == 0) changed else ok.snap.found.isNotEmpty()),
+            onClick = {
+                val p = picked!!
+                val old = original
+                val removeAll = mode == 1
+                val edit = if (removeAll) null else current
+                job.launch(scope) {
+                    var names = emptyList<String>()
+                    val out = OutputStore.savePdf(context, outName(if (removeAll) "Clean" else "Info", p.name)) { os ->
+                        names = PdfUtility.writeMetadata(context, p.uri, os, old, edit)
+                    }
+                    val msg = when {
+                        removeAll && names.isEmpty() -> "Removed all metadata"
+                        removeAll -> "Removed all metadata (${names.first()})"
+                        else -> "Changed ${names.joinToString(", ")}"
+                    }
+                    msg to out
+                }
+            }
+        )
+    }) {
         PdfPickerButton(picked) { picked = it }
         if (picked != null) {
             when (val l = loaded) {
@@ -101,31 +125,8 @@ fun EditMetadataScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 }
             }
         }
-        PrimaryButton(
-            if (mode == 0) "Save metadata" else "Remove metadata",
-            icon = if (mode == 0) AppIcons.DriveFileRenameOutline else AppIcons.DeleteOutline,
-            enabled = ok != null && !job.busy && (if (mode == 0) changed else ok.snap.found.isNotEmpty()),
-            onClick = {
-                val p = picked!!
-                val old = original
-                val removeAll = mode == 1
-                val edit = if (removeAll) null else current
-                job.launch(scope) {
-                    var names = emptyList<String>()
-                    val out = OutputStore.savePdf(context, outName(if (removeAll) "Clean" else "Info", p.name)) { os ->
-                        names = PdfUtility.writeMetadata(context, p.uri, os, old, edit)
-                    }
-                    val msg = when {
-                        removeAll && names.isEmpty() -> "Removed all metadata"
-                        removeAll -> "Removed all metadata (${names.first()})"
-                        else -> "Changed ${names.joinToString(", ")}"
-                    }
-                    "$msg. Saved in Documents/PDF Manager" to out
-                }
-            }
-        )
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("Info_") || it.startsWith("Clean_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "info", "clean") }, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
     }
 }
@@ -169,7 +170,26 @@ fun RepairScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
         value = picked?.let { p -> withContext(Dispatchers.IO) { diagnose(context, p.uri) } }
     }
 
-    ToolScaffold("Repair PDF", onBack) {
+    ToolScaffold("Repair PDF", onBack, bottomBar = {
+        PrimaryButton(
+            "Repair PDF", icon = AppIcons.Handyman,
+            enabled = picked != null && diagnosis != null && diagnosis != Diagnosis.Locked && !job.busy,
+            onClick = {
+                val p = picked!!
+                val pageByPage = rebuild
+                job.launch(scope) {
+                    var result: RepairResult? = null
+                    val out = OutputStore.savePdf(context, outName("Repaired", p.name)) { os ->
+                        result = PdfUtility.repair(context, p.uri, pageByPage, os) { done, n ->
+                            job.progress = "Page $done of $n"
+                        }
+                    }
+                    val r = result!!
+                    RepairHelpers.summary(r.pagesKept, r.skipped, pageByPage, r.opens) to out
+                }
+            }
+        )
+    }) {
         PdfPickerButton(picked) { picked = it }
         if (picked != null) {
             when (val d = diagnosis) {
@@ -193,26 +213,8 @@ fun RepairScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 }
             }
         }
-        PrimaryButton(
-            "Repair PDF", icon = AppIcons.Handyman,
-            enabled = picked != null && diagnosis != null && diagnosis != Diagnosis.Locked && !job.busy,
-            onClick = {
-                val p = picked!!
-                val pageByPage = rebuild
-                job.launch(scope) {
-                    var result: RepairResult? = null
-                    val out = OutputStore.savePdf(context, outName("Repaired", p.name)) { os ->
-                        result = PdfUtility.repair(context, p.uri, pageByPage, os) { done, n ->
-                            job.progress = "Page $done of $n"
-                        }
-                    }
-                    val r = result!!
-                    RepairHelpers.summary(r.pagesKept, r.skipped, pageByPage, r.opens) to out
-                }
-            }
-        )
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("Repaired_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "repaired") }, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
     }
 }

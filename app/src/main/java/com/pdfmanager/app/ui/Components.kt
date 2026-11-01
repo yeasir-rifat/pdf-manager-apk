@@ -3,6 +3,7 @@ package com.pdfmanager.app.ui
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -70,9 +71,12 @@ fun PdfThumb(
     var box by remember { mutableStateOf(IntSize.Zero) }
     val ready = box.width > 0 && box.height > 0
     val key = remember(uri, stamp, box, page) { Thumbnails.key(uri, stamp, box.width, box.height, page) }
+    // Stays false until the load has ended, so a file that cannot be rendered shows the icon instead of shimmering forever
+    var finished by remember(key) { mutableStateOf(false) }
     val bmp by produceState<Bitmap?>(if (ready) Thumbnails.peek(key) else null, key) {
         value = if (!ready) null
         else Thumbnails.peek(key) ?: Thumbnails.load(context, Uri.parse(uri), isPdf, box.width, box.height, stamp, page)
+        if (ready) finished = true
     }
     Box(
         modifier.onSizeChanged { box = it }.clip(shape).background(Color.White)
@@ -86,6 +90,8 @@ fun PdfThumb(
                 modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 alignment = Alignment.TopCenter
             )
+        } else if (!ready || !finished) {
+            Box(Modifier.fillMaxSize().shimmer())
         } else {
             Icon(
                 if (isPdf) AppIcons.PictureAsPdf else AppIcons.Image,
@@ -97,7 +103,7 @@ fun PdfThumb(
     }
 }
 
-/** The one card style of the app: flat tonal surface, 16dp corners, no border (outlined only when selected). */
+/** The one card style of the app: flat tonal surface, 20dp corners, thin hairline border (1.5dp primary border when selected). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppCard(
@@ -106,14 +112,19 @@ fun AppCard(
     highlighted: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(AppDimens.cardRadius)
     val colors = CardDefaults.cardColors(
         containerColor = if (highlighted) MaterialTheme.colorScheme.secondaryContainer
         else MaterialTheme.colorScheme.surfaceContainerLow
     )
-    val border = if (highlighted) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+    val border = if (highlighted) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+    else BorderStroke(AppDimens.hairline, AppTheme.colors.cardBorder)
     if (onClick != null) {
-        Card(onClick = onClick, modifier = modifier, shape = shape, colors = colors, border = border, content = content)
+        val interaction = remember { MutableInteractionSource() }
+        Card(
+            onClick = onClick, modifier = modifier.pressScale(interaction), shape = shape, colors = colors,
+            border = border, interactionSource = interaction, content = content
+        )
     } else {
         Card(modifier = modifier, shape = shape, colors = colors, border = border, content = content)
     }
@@ -241,13 +252,13 @@ fun FilePickCard(
         val line = accent.copy(alpha = 0.55f)
         Column(
             Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(AppDimens.cardRadius))
                 .clickable(onClick = onClick)
                 .background(accent.copy(alpha = 0.06f))
                 .drawBehind {
                     drawRoundRect(
                         line,
-                        cornerRadius = CornerRadius(20.dp.toPx()),
+                        cornerRadius = CornerRadius(AppDimens.cardRadius.toPx()),
                         style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(18f, 12f)))
                     )
                 }

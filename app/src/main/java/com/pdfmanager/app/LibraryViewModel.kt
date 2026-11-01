@@ -145,7 +145,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 indexJob?.cancelAndJoin()
                 textDao.clear()
-                messages.emit("Search inside PDFs is off. The stored text was deleted")
+                messages.emit("Text search off. Stored text deleted")
             }
         }
     }
@@ -153,19 +153,19 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun addFolder(name: String) = viewModelScope.launch {
         if (name.isNotBlank()) {
             dao.insertFolder(FolderEntity(name = name.trim()))
-            messages.emit("Folder \"${name.trim()}\" created")
+            messages.emit("Folder created")
         }
     }
 
     fun deleteFolder(id: Long) = viewModelScope.launch {
         dao.deleteFolder(id)
         if (filter.value == id) filter.value = null
-        messages.emit("Folder deleted. Its files are now unfiled.")
+        messages.emit("Folder deleted")
     }
 
     fun move(uris: List<String>, folderId: Long?, folderName: String?) = viewModelScope.launch {
         uris.forEach { dao.moveTo(it, folderId) }
-        messages.emit("Moved ${files(uris.size)} to ${folderName ?: "Unfiled"}")
+        messages.emit("Moved ${files(uris.size)}")
     }
 
     fun clearRecent() = viewModelScope.launch {
@@ -188,7 +188,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         if (deleted.isNotEmpty()) dao.deleteByUris(deleted)
         messages.emit(
             if (deleted.size == uris.size) "Deleted ${files(deleted.size)}"
-            else "Deleted ${deleted.size} of ${uris.size}. Some files could not be deleted."
+            else "Deleted ${deleted.size} of ${uris.size}"
         )
     }
 
@@ -203,9 +203,9 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (ok) {
             dao.rename(uri, name)
-            messages.emit("Renamed to $name")
+            messages.emit("Renamed")
         } else {
-            messages.emit("Could not rename this file")
+            messages.emit("Could not rename")
         }
     }
 }

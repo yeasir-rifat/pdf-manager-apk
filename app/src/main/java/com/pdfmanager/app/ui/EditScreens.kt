@@ -69,7 +69,20 @@ fun WatermarkScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
         else MarkArt.text(text.trim(), watermarkColors[color].second)
     }
 
-    ToolScaffold("Watermark", onBack) {
+    ToolScaffold("Watermark", onBack, bottomBar = {
+        PrimaryButton("Add watermark", icon = AppIcons.Watermark, enabled = picked != null && art != null && !job.busy, onClick = {
+            val p = picked!!
+            val a = art!!
+            val (s, o, ang) = Triple(size, opacity, angle.toFloat())
+            job.launch(scope) {
+                var n = 0
+                val out = OutputStore.savePdf(context, outName("Watermarked", p.name)) { os ->
+                    n = PdfEdit.watermark(context, p.uri, os, a, s, o, ang)
+                }
+                "Watermark added" to out
+            }
+        })
+    }) {
         PdfPickerButton(picked) { picked = it }
         OptionCard("Watermark") {
             ChipRow(listOf(false to "Text", true to "Image"), imageMode) { imageMode = it }
@@ -102,21 +115,9 @@ fun WatermarkScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 }
             }
         }
-        PrimaryButton("Add watermark", icon = AppIcons.Watermark, enabled = picked != null && art != null && !job.busy, onClick = {
-            val p = picked!!
-            val a = art!!
-            val (s, o, ang) = Triple(size, opacity, angle.toFloat())
-            job.launch(scope) {
-                var n = 0
-                val out = OutputStore.savePdf(context, outName("Watermarked", p.name)) { os ->
-                    n = PdfEdit.watermark(context, p.uri, os, a, s, o, ang)
-                }
-                "Watermark added to $n pages. Saved in Documents/PDF Manager" to out
-            }
-        })
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Watermarked_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "watermarked") }, onOpen)
     }
 }
 
@@ -161,7 +162,19 @@ fun PageNumbersScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val job = remember { ToolJob() }
     val start = startText.toIntOrNull()?.coerceIn(0, 99999)
 
-    ToolScaffold("Page numbers", onBack) {
+    ToolScaffold("Page numbers", onBack, bottomBar = {
+        PrimaryButton("Add numbers", icon = AppIcons.Numbers, enabled = picked != null && start != null && !job.busy, onClick = {
+            val p = picked!!
+            val (ps, st, fm, sz) = listOf(pos, start!!, format, sizePt.roundToInt())
+            job.launch(scope) {
+                var n = 0
+                val out = OutputStore.savePdf(context, outName("Numbered", p.name)) { os ->
+                    n = PdfEdit.pageNumbers(context, p.uri, os, ps, st, fm, sz.toFloat())
+                }
+                "Pages numbered" to out
+            }
+        })
+    }) {
         PdfPickerButton(picked) { picked = it }
         OptionCard("Position") { PositionPicker(pos) { pos = it } }
         OptionCard("Style") {
@@ -193,20 +206,9 @@ fun PageNumbersScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 }
             }
         }
-        PrimaryButton("Add numbers", icon = AppIcons.Numbers, enabled = picked != null && start != null && !job.busy, onClick = {
-            val p = picked!!
-            val (ps, st, fm, sz) = listOf(pos, start!!, format, sizePt.roundToInt())
-            job.launch(scope) {
-                var n = 0
-                val out = OutputStore.savePdf(context, outName("Numbered", p.name)) { os ->
-                    n = PdfEdit.pageNumbers(context, p.uri, os, ps, st, fm, sz.toFloat())
-                }
-                "Numbered $n pages. Saved in Documents/PDF Manager" to out
-            }
-        })
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Numbered_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "numbered") }, onOpen)
     }
 }
 
@@ -222,12 +224,7 @@ fun ResizePaperScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val job = remember { ToolJob() }
     val target = PdfEdit.paperSizes[size]
 
-    ToolScaffold("Resize paper", onBack) {
-        PdfPickerButton(picked) { picked = it }
-        OptionCard("Paper size") {
-            ChipRow(PdfEdit.paperSizes.mapIndexed { i, s -> i to s.label }, size) { size = it }
-            ChipRow(listOf(false to "Fit page", true to "Fill page"), fill) { fill = it }
-        }
+    ToolScaffold("Resize paper", onBack, bottomBar = {
         PrimaryButton("Resize to ${target.label}", icon = AppIcons.AspectRatio, enabled = picked != null && !job.busy, onClick = {
             val p = picked!!
             val t = target
@@ -237,12 +234,18 @@ fun ResizePaperScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 val out = OutputStore.savePdf(context, outName(t.label, p.name)) { os ->
                     n = PdfEdit.resize(context, p.uri, os, t.rect, f)
                 }
-                "Resized $n pages to ${t.label}. Saved in Documents/PDF Manager" to out
+                "Resized to ${t.label}" to out
             }
         })
+    }) {
+        PdfPickerButton(picked) { picked = it }
+        OptionCard("Paper size") {
+            ChipRow(PdfEdit.paperSizes.mapIndexed { i, s -> i to s.label }, size) { size = it }
+            ChipRow(listOf(false to "Fit page", true to "Fill page"), fill) { fill = it }
+        }
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { Regex("^(A3|A4|A5|Letter|Legal)_").containsMatchIn(it) }, onOpen)
+        RecentResults(job.result, { madeBy(it, "A3", "A4", "A5", "Letter", "Legal") }, onOpen)
     }
 }
 
@@ -262,7 +265,23 @@ fun PosterScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val job = remember { ToolJob() }
     val sheets = cols * rows
 
-    ToolScaffold("Poster print", onBack) {
+    ToolScaffold("Poster print", onBack, bottomBar = {
+        PrimaryButton(
+            "Create $sheets ${if (sheets == 1) "sheet" else "sheets"}", icon = AppIcons.Poster,
+            enabled = picked != null && pages > 0 && !job.busy, onClick = {
+                val p = picked!!
+                val (pg, c, r) = Triple(page, cols, rows)
+                val ov = overlapMm * 72f / 25.4f
+                job.launch(scope) {
+                    var n = 0
+                    val out = OutputStore.savePdf(context, outName("Poster", p.name)) { os ->
+                        n = PdfEdit.poster(context, p.uri, os, pg, c, r, ov)
+                    }
+                    "Poster: $n A4 sheets" to out
+                }
+            }
+        )
+    }) {
         PdfPickerButton(picked) { picked = it }
         PagesState(picked, pageCount)
         picked?.let { p ->
@@ -289,23 +308,8 @@ fun PosterScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             StepperRow("Rows", rows, 1..8) { rows = it }
             ChipRow(listOf(0 to "No overlap", 5 to "5 mm", 10 to "10 mm", 20 to "20 mm"), overlapMm) { overlapMm = it }
         }
-        PrimaryButton(
-            "Create $sheets ${if (sheets == 1) "sheet" else "sheets"}", icon = AppIcons.Poster,
-            enabled = picked != null && pages > 0 && !job.busy, onClick = {
-                val p = picked!!
-                val (pg, c, r) = Triple(page, cols, rows)
-                val ov = overlapMm * 72f / 25.4f
-                job.launch(scope) {
-                    var n = 0
-                    val out = OutputStore.savePdf(context, outName("Poster", p.name)) { os ->
-                        n = PdfEdit.poster(context, p.uri, os, pg, c, r, ov)
-                    }
-                    "Poster ready: $n A4 sheets. Saved in Documents/PDF Manager" to out
-                }
-            }
-        )
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Poster_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "poster") }, onOpen)
     }
 }

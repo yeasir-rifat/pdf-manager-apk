@@ -100,19 +100,19 @@ class OfficeHelpersTest {
     // ------------------------------------------------------------ output names
 
     @Test fun outputNameUsesPrefixAndOriginalName() {
-        assertEquals("Word_Report.pdf", OfficeHelpers.outputName(OfficeKind.WORD, "Report.docx", "T"))
-        assertEquals("Excel_Budget 2026.pdf", OfficeHelpers.outputName(OfficeKind.EXCEL, "Budget 2026.xlsx", "T"))
-        assertEquals("Slides_a.b.pdf", OfficeHelpers.outputName(OfficeKind.POWERPOINT, "a.b.pptx", "T"))
+        assertEquals("Report_word.pdf", OfficeHelpers.outputName(OfficeKind.WORD, "Report.docx", "T"))
+        assertEquals("Budget 2026_excel.pdf", OfficeHelpers.outputName(OfficeKind.EXCEL, "Budget 2026.xlsx", "T"))
+        assertEquals("a.b_slides.pdf", OfficeHelpers.outputName(OfficeKind.POWERPOINT, "a.b.pptx", "T"))
     }
 
     @Test fun outputNameKeepsBangla() {
-        assertEquals("Word_প্রতিবেদন.pdf", OfficeHelpers.outputName(OfficeKind.WORD, "প্রতিবেদন.docx", "T"))
+        assertEquals("প্রতিবেদন_word.pdf", OfficeHelpers.outputName(OfficeKind.WORD, "প্রতিবেদন.docx", "T"))
     }
 
     @Test fun missingNameFallsBackToStamp() {
-        assertEquals("Word_20261030.pdf", OfficeHelpers.outputName(OfficeKind.WORD, null, "20261030"))
-        assertEquals("Word_20261030.pdf", OfficeHelpers.outputName(OfficeKind.WORD, "  ", "20261030"))
-        assertEquals("Word_20261030.pdf", OfficeHelpers.outputName(OfficeKind.WORD, ".docx", "20261030"))
+        assertEquals("20261030_word.pdf", OfficeHelpers.outputName(OfficeKind.WORD, null, "20261030"))
+        assertEquals("20261030_word.pdf", OfficeHelpers.outputName(OfficeKind.WORD, "  ", "20261030"))
+        assertEquals("20261030_word.pdf", OfficeHelpers.outputName(OfficeKind.WORD, ".docx", "20261030"))
     }
 
     @Test fun driveNameHidesTheRealName() {
@@ -122,16 +122,16 @@ class OfficeHelpersTest {
     // ------------------------------------------------------------ error messages
 
     @Test fun messagesFollowThePlan() {
-        assertEquals("Drive API is not enabled for this app", OfficeHelpers.messageFor(403, "accessNotConfigured"))
+        assertEquals("Drive API is not enabled", OfficeHelpers.messageFor(403, "accessNotConfigured"))
         assertEquals("Your Google Drive storage is full", OfficeHelpers.messageFor(403, "storageQuotaExceeded"))
-        assertEquals("The converted PDF is too large (over 10 MB) for Google to export", OfficeHelpers.messageFor(403, "exportSizeLimitExceeded"))
-        assertEquals("Google is busy, try again in a minute", OfficeHelpers.messageFor(403, "userRateLimitExceeded"))
-        assertEquals("Google is busy, try again in a minute", OfficeHelpers.messageFor(429, null))
-        assertEquals("Please connect your Google account again", OfficeHelpers.messageFor(401, null))
-        assertEquals("Google could not convert this file (locked or damaged?)", OfficeHelpers.messageFor(400, null))
-        assertEquals("Google had a problem, try again", OfficeHelpers.messageFor(503, null))
-        assertEquals("Google did not allow this request", OfficeHelpers.messageFor(403, "forbidden"))
-        assertEquals("Google could not finish this request", OfficeHelpers.messageFor(418, null))
+        assertEquals("Converted PDF is over 10 MB", OfficeHelpers.messageFor(403, "exportSizeLimitExceeded"))
+        assertEquals("Google is busy. Try again soon", OfficeHelpers.messageFor(403, "userRateLimitExceeded"))
+        assertEquals("Google is busy. Try again soon", OfficeHelpers.messageFor(429, null))
+        assertEquals("Reconnect your Google account", OfficeHelpers.messageFor(401, null))
+        assertEquals("Can't convert. Locked or damaged?", OfficeHelpers.messageFor(400, null))
+        assertEquals("Google problem. Try again", OfficeHelpers.messageFor(503, null))
+        assertEquals("Google denied the request", OfficeHelpers.messageFor(403, "forbidden"))
+        assertEquals("Google could not finish", OfficeHelpers.messageFor(418, null))
     }
 
     @Test fun retryOnlyWhenItCanHelp() {
@@ -186,11 +186,11 @@ class OfficeHelpersTest {
     // ------------------------------------------------------------ result message
 
     @Test fun resultMessageSaysPagesAndDriveCopy() {
-        assertEquals("Created a PDF with 3 pages. Saved in Documents/PDF Manager", OfficeHelpers.resultMessage(3, true))
-        assertEquals("Created a PDF with 1 page. Saved in Documents/PDF Manager", OfficeHelpers.resultMessage(1, true))
-        assertEquals("Done. Saved in Documents/PDF Manager", OfficeHelpers.resultMessage(0, true))
+        assertEquals("Created a PDF (3 pages)", OfficeHelpers.resultMessage(3, true))
+        assertEquals("Created a PDF (1 page)", OfficeHelpers.resultMessage(1, true))
+        assertEquals("Done", OfficeHelpers.resultMessage(0, true))
         assertEquals(
-            "Created a PDF with 2 pages. Saved in Documents/PDF Manager. The temporary Drive copy will be removed later",
+            "Created a PDF (2 pages). Drive copy removed later",
             OfficeHelpers.resultMessage(2, false),
         )
     }

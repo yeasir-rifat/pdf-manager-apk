@@ -114,7 +114,21 @@ fun SignScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val strokePx = with(density) { 3.dp.toPx() }
     val sig = remember(strokes.size) { renderSignature(strokes.toList(), strokePx) }
 
-    ToolScaffold("Sign PDF", onBack) {
+    ToolScaffold("Sign PDF", onBack, bottomBar = {
+        PrimaryButton("Sign PDF", icon = AppIcons.Edit, enabled = picked != null && sig != null && !job.busy, onClick = {
+            val file = picked!!
+            val art = sig!!
+            val targets = if (allPages) (0 until pages).toSet() else setOf(page)
+            val (x, y, w) = Triple(cx, cy, width)
+            job.launch(scope) {
+                var n = 0
+                val out = OutputStore.savePdf(context, outName("Signed", file.name)) { os ->
+                    n = PdfEdit.placeImage(context, file.uri, os, art, targets, x, y, w)
+                }
+                "Signed ${if (n == 1) "1 page" else "$n pages"}" to out
+            }
+        })
+    }) {
         PdfPickerButton(picked) { picked = it }
         PagesState(picked, pageCount)
         OptionCard("Draw your signature") {
@@ -186,22 +200,9 @@ fun SignScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 ChipRow(listOf(false to "This page", true to "All pages"), allPages) { allPages = it }
             }
         }
-        PrimaryButton("Sign PDF", icon = AppIcons.Edit, enabled = p != null && sig != null && !job.busy, onClick = {
-            val file = picked!!
-            val art = sig!!
-            val targets = if (allPages) (0 until pages).toSet() else setOf(page)
-            val (x, y, w) = Triple(cx, cy, width)
-            job.launch(scope) {
-                var n = 0
-                val out = OutputStore.savePdf(context, outName("Signed", file.name)) { os ->
-                    n = PdfEdit.placeImage(context, file.uri, os, art, targets, x, y, w)
-                }
-                "Signed ${if (n == 1) "1 page" else "$n pages"}. Saved in Documents/PDF Manager" to out
-            }
-        })
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Signed_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "signed") }, onOpen)
     }
 }
 
@@ -232,6 +233,7 @@ fun HighlightNotesScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
 
     if (pendingNote != null) {
         AlertDialog(
+            modifier = Modifier.dialogEnter(),
             onDismissRequest = { pendingNote = null; noteText = "" },
             title = { Text("Note") },
             text = {
@@ -251,7 +253,19 @@ fun HighlightNotesScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
         )
     }
 
-    ToolScaffold("Highlight / Notes", onBack) {
+    ToolScaffold("Highlight / Notes", onBack, bottomBar = {
+        PrimaryButton("Save marks", icon = AppIcons.StickyNote, enabled = picked != null && marks.isNotEmpty() && !job.busy, onClick = {
+            val file = picked!!
+            val list = marks.toList()
+            job.launch(scope) {
+                var n = 0
+                val out = OutputStore.savePdf(context, outName("Marked", file.name)) { os ->
+                    n = PdfEdit.applyMarks(context, file.uri, os, list)
+                }
+                "Saved $n ${if (n == 1) "mark" else "marks"}" to out
+            }
+        })
+    }) {
         PdfPickerButton(picked) { picked = it }
         PagesState(picked, pageCount)
         val p = picked
@@ -344,19 +358,8 @@ fun HighlightNotesScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 )
             }
         }
-        PrimaryButton("Save marks", icon = AppIcons.StickyNote, enabled = p != null && marks.isNotEmpty() && !job.busy, onClick = {
-            val file = picked!!
-            val list = marks.toList()
-            job.launch(scope) {
-                var n = 0
-                val out = OutputStore.savePdf(context, outName("Marked", file.name)) { os ->
-                    n = PdfEdit.applyMarks(context, file.uri, os, list)
-                }
-                "Saved $n ${if (n == 1) "mark" else "marks"}. Saved in Documents/PDF Manager" to out
-            }
-        })
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Marked_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "marked") }, onOpen)
     }
 }

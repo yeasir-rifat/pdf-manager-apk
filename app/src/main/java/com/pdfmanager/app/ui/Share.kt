@@ -2,15 +2,18 @@ package com.pdfmanager.app.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.widget.Toast
+import com.pdfmanager.app.MainActivity
+import com.pdfmanager.app.R
 
 object Share {
     /** Opens the system share sheet for one or more PDFs. */
-    fun pdfs(context: Context, uris: List<String>) = files(context, uris, "application/pdf", "Share PDF")
+    fun pdfs(context: Context, uris: List<String>) = files(context, uris, "application/pdf", context.getString(R.string.result_share_pdf))
 
     /** Opens the system share sheet for one or more files of the same [mime] type. */
     fun files(context: Context, uris: List<String>, mime: String, chooserTitle: String) {
@@ -28,7 +31,7 @@ object Share {
             send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             context.startActivity(Intent.createChooser(send, chooserTitle).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
         }.onFailure {
-            Toast.makeText(context, "Sharing is not available for this file", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.share_unavailable), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -41,7 +44,24 @@ object Share {
             }
             context.startActivity(open)
         }.onFailure {
-            Toast.makeText(context, "No app can open this file", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.share_no_app), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Lets the person choose another app to open a PDF; this app is left out of the list. */
+    fun openWith(context: Context, uri: String) {
+        runCatching {
+            val open = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.parse(uri), "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(open, context.getString(R.string.viewer_open_with)).apply {
+                putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(context, MainActivity::class.java)))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(chooser)
+        }.onFailure {
+            Toast.makeText(context, context.getString(R.string.share_no_app), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -50,9 +70,9 @@ object Share {
         runCatching {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("PDF text", text))
-            if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+            if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, context.getString(R.string.common_copied), Toast.LENGTH_SHORT).show()
         }.onFailure {
-            Toast.makeText(context, "Could not copy the text", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.share_copy_failed), Toast.LENGTH_SHORT).show()
         }
     }
 }

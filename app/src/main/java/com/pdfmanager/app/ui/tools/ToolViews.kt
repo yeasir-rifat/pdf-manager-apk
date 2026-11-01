@@ -1,7 +1,10 @@
 package com.pdfmanager.app.ui.tools
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,21 +47,29 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
+import com.pdfmanager.app.R
+import com.pdfmanager.app.ui.AppDimens
 import com.pdfmanager.app.ui.AppIcons
+import com.pdfmanager.app.ui.AppText
 import com.pdfmanager.app.ui.AppTheme
+import com.pdfmanager.app.ui.pressScale
 
-private val CardShape = RoundedCornerShape(20.dp)
+private val CardShape = RoundedCornerShape(AppDimens.cardRadius)
 
 /**
  * The tools as a grid of cards: three columns on phones, as many as fit (about 120dp each) on wide
- * screens and in landscape. Every item has a stable key (the tool id).
+ * screens and in landscape. Every item has a stable key (the tool id). With [showHeaders] each
+ * category starts with a full-width heading; it is off while searching.
  */
 @Composable
 fun ToolGrid(
     tools: List<ToolDef>,
     onToolClick: (ToolDef) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showHeaders: Boolean = true,
+    recents: List<ToolDef> = emptyList()
 ) {
+    val groups = remember(tools) { ToolCatalog.groupByCategory(tools) }
     val compact = LocalConfiguration.current.screenWidthDp < 600
     LazyVerticalGrid(
         columns = if (compact) GridCells.Fixed(3) else GridCells.Adaptive(minSize = 120.dp),
@@ -66,8 +78,23 @@ fun ToolGrid(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(tools, key = { it.id }) { tool ->
-            ToolCard(tool, onClick = { onToolClick(tool) })
+        if (showHeaders && recents.isNotEmpty()) {
+            item(key = "header-recent", span = { GridItemSpan(maxLineSpan) }) {
+                ToolCategoryHeader(stringResource(R.string.tools_recent))
+            }
+            // A different key from the tool's own entry below: the same tool is listed twice,
+            // and two items with the same key would crash the grid
+            items(recents, key = { "recent-${it.id}" }) { tool -> ToolCard(tool, onClick = { onToolClick(tool) }) }
+        }
+        if (showHeaders) {
+            groups.forEach { (category, rows) ->
+                item(key = "header-${category.name}", span = { GridItemSpan(maxLineSpan) }) {
+                    ToolCategoryHeader(stringResource(category.titleRes))
+                }
+                items(rows, key = { it.id }) { tool -> ToolCard(tool, onClick = { onToolClick(tool) }) }
+            }
+        } else {
+            items(tools, key = { it.id }) { tool -> ToolCard(tool, onClick = { onToolClick(tool) }) }
         }
     }
 }
@@ -80,13 +107,16 @@ fun ToolGrid(
 @Composable
 fun ToolCard(tool: ToolDef, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = AppTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Column(
         modifier
             .fillMaxWidth()
             .heightIn(min = 108.dp)
+            .pressScale(interaction)
             .clip(CardShape)
             .background(colors.toolCard)
-            .clickable(role = Role.Button, onClick = onClick)
+            .border(AppDimens.hairline, colors.cardBorder, CardShape)
+            .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
             .padding(horizontal = 3.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -136,40 +166,59 @@ private fun CardLabel(text: String, style: TextStyle, color: Color) {
 
 /**
  * The same tools as category sections: a heading, then one row per tool (colored icon tile, name,
- * arrow). [tools] is already filtered; grouping follows the catalog's category order.
+ * arrow). [tools] is already filtered; grouping follows the catalog's category order. With
+ * [showHeaders] off (while searching) the rows come as one plain list.
  */
 @Composable
 fun ToolList(
     tools: List<ToolDef>,
     onToolClick: (ToolDef) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showHeaders: Boolean = true,
+    recents: List<ToolDef> = emptyList()
 ) {
     val groups = remember(tools) { ToolCatalog.groupByCategory(tools) }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        groups.forEachIndexed { index, (category, rows) ->
-            item(key = "header-${category.name}") {
-                Column {
-                    if (index > 0) HorizontalDivider(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = AppTheme.colors.divider
-                    )
-                    ToolCategoryHeader(stringResource(category.titleRes))
-                }
+        if (showHeaders && recents.isNotEmpty()) {
+            item(key = "header-recent") {
+                ToolCategoryHeader(stringResource(R.string.tools_recent), Modifier.padding(horizontal = 16.dp))
             }
-            items(rows, key = { it.id }) { tool -> ToolListItem(tool, onClick = { onToolClick(tool) }) }
+            items(recents, key = { "recent-${it.id}" }) { tool -> ToolListItem(tool, onClick = { onToolClick(tool) }) }
+        }
+        if (showHeaders) {
+            groups.forEach { (category, rows) ->
+                item(key = "header-${category.name}") {
+                    ToolCategoryHeader(stringResource(category.titleRes), Modifier.padding(horizontal = 16.dp))
+                }
+                items(rows, key = { it.id }) { tool -> ToolListItem(tool, onClick = { onToolClick(tool) }) }
+            }
+        } else {
+            items(tools, key = { it.id }) { tool -> ToolListItem(tool, onClick = { onToolClick(tool) }) }
         }
     }
 }
 
+/**
+ * Small group heading: the category name (Caption style, secondary color, always one line) with a
+ * thin line after it, and a 16dp gap above. It has no side padding, so the caller sets it.
+ */
 @Composable
 fun ToolCategoryHeader(title: String, modifier: Modifier = Modifier) {
-    Text(
-        title,
-        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-        color = AppTheme.colors.textPrimary,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-    )
+    val colors = AppTheme.colors
+    Row(
+        modifier.fillMaxWidth().padding(top = AppDimens.space16, bottom = AppDimens.space4),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            title,
+            style = AppText.caption,
+            color = colors.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.width(AppDimens.space12))
+        HorizontalDivider(Modifier.weight(1f), thickness = AppDimens.hairline, color = colors.divider)
+    }
 }
 
 @Composable

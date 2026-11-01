@@ -14,6 +14,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -44,6 +54,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.pdfmanager.app.R
 import com.pdfmanager.app.data.OutputStore
 import com.pdfmanager.app.data.PdfOps
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
@@ -55,7 +66,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class Picked(val uri: Uri, val name: String)
+/** Gives every picked entry its own id, so the same file added twice still has two different list keys. */
+internal object PickedIds { private var n = 0L; fun next() = n++ }
+
+data class Picked(val uri: Uri, val name: String) {
+    /** List key. Kept out of the constructor, so two entries of the same file are still equal for comparisons. */
+    val id: Long = PickedIds.next()
+}
 
 /** Lets a tool keep its chosen file when the person opens a result and comes back with Back. */
 val PickedSaver: Saver<Picked?, Any> = listSaver<Picked?, String>(
@@ -84,9 +101,17 @@ object ToolInput {
 fun stamp(): String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 fun baseOf(name: String) = name.substringBeforeLast('.')
 
-/** Output file name: "<Tool>_<original name>.pdf", e.g. Merged_Plant Pathology Sheet.pdf. Falls back to a timestamp when there is no source name. */
-fun outName(prefix: String, source: String?): String =
-    "${prefix}_${source?.takeIf { it.isNotBlank() }?.let { baseOf(it) } ?: stamp()}.pdf"
+/** Output file name: "<original name>_<tool>.pdf", e.g. Plant Pathology Sheet_merged.pdf. Falls back to a timestamp when there is no source name. */
+fun outName(tag: String, source: String?): String =
+    "${source?.takeIf { it.isNotBlank() }?.let { baseOf(it) } ?: stamp()}_${tag.lowercase()}.pdf"
+
+/**
+ * True when [fileName] was made by one of the tools in [tags]. Matches the current "<name>_<tag>.pdf"
+ * and the older "<Tag>_<name>.pdf", so files saved before the change still show up in the lists.
+ */
+fun madeBy(fileName: String, vararg tags: String): Boolean = tags.any { t ->
+    fileName.endsWith("_$t.pdf", ignoreCase = true) || fileName.startsWith("${t}_", ignoreCase = true)
+}
 
 /** Settings switch: ask for the file name after a tool has made a file. */
 object NamePref {
@@ -96,7 +121,28 @@ object NamePref {
 }
 
 /** Bumped after a rename so every "Processed files" list reloads. */
+const val DOCS_FOLDER = "Documents/PDF Manager"
+const val PICTURES_FOLDER = "Pictures/PDF Manager"
+
 object ResultsVersion { var tick by mutableStateOf(0) }
+
+/** Application context for texts made inside ToolJob (set once in MainActivity.onCreate). */
+object ToolJobText { lateinit var app: android.content.Context }
+
+/** Plain-language reason for a failed job. The raw exception text goes to ToolJob.details instead. */
+fun friendlyError(e: Throwable): String {
+    val c = ToolJobText.app
+    return c.getString(
+        when (e) {
+            is InvalidPasswordException -> R.string.err_locked
+            is OutOfMemoryError -> R.string.err_memory
+            is java.io.FileNotFoundException -> R.string.err_file_missing
+            is SecurityException -> R.string.err_permission
+            is java.io.IOException -> R.string.err_io
+            else -> R.string.err_generic
+        }
+    )
+}
 
 /** Runs one background operation and exposes its state to the UI. */
 class ToolJob {
@@ -108,6 +154,22 @@ class ToolJob {
     /** The file just made, offered for renaming when "Ask for file name" is on in Settings. */
     var renameCandidate by mutableStateOf<Uri?>(null)
     var allowRename = true
+    /** Size of the input file in bytes. Only Compress sets it, so the result can read "4.2 MB to 1.1 MB". */
+    var originalSizeBytes by mutableStateOf<Long?>(null)
+    /** Real progress 0f..1f for the bar; null means unknown (the bar keeps moving). */
+    var fraction by mutableStateOf<Float?>(null)
+    /** Technical reason behind a failure, shown only when the person taps "Technical details". */
+    var details by mutableStateOf<String?>(null)
+    /** Folder shown on the result card. Messages stay short; the place is its own line. */
+    var savedIn by mutableStateOf(DOCS_FOLDER)
+    /** Bumped when the result file is renamed, so the card reads the new name. */
+    var statusVersion by mutableStateOf(0)
+
+    /** Hides the finished-job card (the "Done" button). The chosen file and options stay. */
+    fun dismiss() {
+        status = null; failed = false; result = null; renameCandidate = null; originalSizeBytes = null
+        fraction = null; details = null; savedIn = DOCS_FOLDER
+    }
 
     fun fail(message: String) {
         status = message; failed = true; result = null
@@ -115,7 +177,8 @@ class ToolJob {
 
     fun launch(scope: CoroutineScope, work: () -> Pair<String, Uri?>) {
         if (busy) return
-        busy = true; status = null; failed = false; result = null; progress = null; renameCandidate = null
+        busy = true; status = null; failed = false; result = null; progress = null; renameCandidate = null; originalSizeBytes = null
+        fraction = null; details = null; savedIn = DOCS_FOLDER
         scope.launch {
             try {
                 val (msg, uri) = withContext(Dispatchers.IO) { work() }
@@ -123,14 +186,14 @@ class ToolJob {
                 if (allowRename) renameCandidate = uri
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (e: InvalidPasswordException) {
-                fail("This PDF is locked. Unlock it first with Lock / Unlock")
             } catch (e: Exception) {
-                fail("Failed: ${e.message ?: e.javaClass.simpleName}")
+                details = e.message ?: e.javaClass.simpleName
+                fail(friendlyError(e))
             } catch (e: OutOfMemoryError) {
-                fail("Not enough memory for this file. Try a smaller PDF or fewer pages")
+                details = "OutOfMemoryError"
+                fail(friendlyError(e))
             } finally {
-                busy = false; progress = null
+                busy = false; progress = null; fraction = null
             }
         }
     }
@@ -140,7 +203,12 @@ class ToolJob {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ToolScaffold(title: String, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
+fun ToolScaffold(
+    title: String,
+    onBack: (() -> Unit)?,
+    bottomBar: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
     // Large title that shrinks into a normal app bar while scrolling
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
@@ -163,6 +231,23 @@ fun ToolScaffold(title: String, onBack: (() -> Unit)?, content: @Composable Colu
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             )
+        },
+        bottomBar = {
+            // Main action stays visible however long the page is
+            if (bottomBar != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.background,
+                    tonalElevation = 3.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        content = bottomBar
+                    )
+                }
+            }
         }
     ) { p ->
         Column(
@@ -202,53 +287,65 @@ fun JobStatus(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 3.dp)
                         Spacer(Modifier.width(14.dp))
-                        Text(job.progress ?: "Working…", style = MaterialTheme.typography.titleSmall)
+                        Text(job.progress ?: stringResource(R.string.common_working), style = MaterialTheme.typography.titleSmall)
                     }
-                    LinearProgressIndicator(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
+                    val f = job.fraction
+                    if (f == null) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
+                    } else {
+                        LinearProgressIndicator(progress = { f.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
+                    }
                 }
             }
         }
         job.status?.let { msg ->
-            val ok = !job.failed
-            val tint = if (ok) Accent.Green else MaterialTheme.colorScheme.error
-            Card(
-                Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = tint.copy(alpha = 0.10f))
-            ) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Box(
-                            Modifier.size(40.dp).clip(CircleShape).background(tint.copy(alpha = 0.18f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                if (ok) AppIcons.Check else AppIcons.ErrorOutline, null,
-                                tint = tint, modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(if (ok) "Done" else "Something went wrong", style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(2.dp))
-                            Text(msg, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    val r = job.result
-                    if (r != null && onOpen != null) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(onClick = { onOpen(r) }, shape = RoundedCornerShape(20.dp)) {
-                                Icon(openIcon, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Open")
-                            }
-                            FilledTonalButton(
-                                onClick = { Share.files(context, listOf(r), mime, if (mime == "application/pdf") "Share PDF" else "Share file") },
-                                shape = RoundedCornerShape(20.dp)
+            if (!job.failed) {
+                val resultUri = job.result?.let { Uri.parse(it) }
+                // Reloaded when the file is renamed (the status text changes then)
+                val info by produceState<ResultFileInfo?>(null, resultUri, msg, job.statusVersion) {
+                    value = resultUri?.let { u -> withContext(Dispatchers.IO) { readResultFileInfo(context, u) } }
+                }
+                val r = job.result
+                ResultCard(
+                    fileName = info?.name,
+                    sizeBytes = info?.sizeBytes,
+                    originalSizeBytes = job.originalSizeBytes,
+                    message = msg,
+                    savedIn = job.savedIn,
+                    onOpen = if (r != null && onOpen != null) ({ onOpen(r) }) else null,
+                    onShare = if (r != null) ({
+                        Share.files(
+                            context, listOf(r), mime,
+                            context.getString(if (mime == "application/pdf") R.string.result_share_pdf else R.string.result_share_file)
+                        )
+                    }) else null,
+                    onDone = { job.dismiss() }
+                )
+            } else {
+                val tint = MaterialTheme.colorScheme.error
+                Card(
+                    Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(AppDimens.cardRadius),
+                    colors = CardDefaults.cardColors(containerColor = tint.copy(alpha = 0.10f))
+                ) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Box(
+                                Modifier.size(40.dp).clip(CircleShape).background(tint.copy(alpha = 0.18f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(AppIcons.Share, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Share")
+                                Icon(AppIcons.ErrorOutline, null, tint = tint, modifier = Modifier.size(24.dp))
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.err_title), style = MaterialTheme.typography.titleMedium)
+                                Spacer(Modifier.height(2.dp))
+                                Text(msg, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                job.details?.let { d ->
+                                    var showDetails by remember { mutableStateOf(false) }
+                                    TextButton(onClick = { showDetails = !showDetails }) { Text(stringResource(R.string.err_details)) }
+                                    if (showDetails) Text(d, style = AppText.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
                     }
@@ -260,41 +357,100 @@ fun JobStatus(
 
 @Composable
 fun PickedList(items: SnapshotStateList<Picked>) {
+    val haptics = rememberAppHaptics()
+    var draggedId by remember { mutableStateOf<Long?>(null) }
+    var dragY by remember { mutableFloatStateOf(0f) }
+    var stepPx by remember { mutableFloatStateOf(0f) }
+    val gapPx = with(LocalDensity.current) { 8.dp.toPx() }
+    val moveUp = stringResource(R.string.pick_move_up)
+    val moveDown = stringResource(R.string.pick_move_down)
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items.forEachIndexed { i, p ->
-            AppCard(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+        items.toList().forEach { p ->
+            key(p.id) {
+                val dragging = draggedId == p.id
+                val index = items.indexOfFirst { it.id == p.id }
+                AppCard(
+                    Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { stepPx = it.height + gapPx }
+                        .zIndex(if (dragging) 1f else 0f)
+                        .graphicsLayer {
+                            translationY = if (dragging) dragY else 0f
+                            val sc = if (dragging) 1.03f else 1f
+                            scaleX = sc; scaleY = sc
+                            alpha = if (dragging) 0.95f else 1f
+                        }
+                        .semantics {
+                            // TalkBack users move a file with these actions instead of dragging
+                            customActions = listOf(
+                                CustomAccessibilityAction(moveUp) {
+                                    val i = items.indexOfFirst { it.id == p.id }
+                                    if (i > 0) { items.add(i - 1, items.removeAt(i)); true } else false
+                                },
+                                CustomAccessibilityAction(moveDown) {
+                                    val i = items.indexOfFirst { it.id == p.id }
+                                    if (i >= 0 && i < items.lastIndex) { items.add(i + 1, items.removeAt(i)); true } else false
+                                }
+                            )
+                        }
+                        .pointerInput(p.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { draggedId = p.id; dragY = 0f; haptics.confirm() },
+                                onDragEnd = { draggedId = null; dragY = 0f },
+                                onDragCancel = { draggedId = null; dragY = 0f },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragY += amount.y
+                                    val from = items.indexOfFirst { it.id == p.id }
+                                    if (from >= 0 && stepPx > 0f) {
+                                        if (dragY > stepPx / 2 && from < items.lastIndex) {
+                                            items.add(from + 1, items.removeAt(from)); dragY -= stepPx; haptics.tick()
+                                        } else if (dragY < -stepPx / 2 && from > 0) {
+                                            items.add(from - 1, items.removeAt(from)); dragY += stepPx; haptics.tick()
+                                        }
+                                    }
+                                }
+                            )
+                        }
                 ) {
-                    Box(
-                        Modifier.size(24.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "${i + 1}", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        Box(
+                            Modifier.size(24.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "${index + 1}", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        PdfThumb(
+                            p.uri.toString(), Modifier.size(width = 36.dp, height = 48.dp),
+                            isPdf = p.name.endsWith(".pdf", ignoreCase = true), widthPx = 160
                         )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            p.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                        // Drag handle (the whole card can be pressed and held)
+                        Icon(AppIcons.SwapVert, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = { items.removeAll { it.id == p.id } }) {
+                            Icon(AppIcons.Close, stringResource(R.string.pick_remove))
+                        }
                     }
-                    Spacer(Modifier.width(10.dp))
-                    PdfThumb(
-                        p.uri.toString(), Modifier.size(width = 36.dp, height = 48.dp),
-                        isPdf = p.name.endsWith(".pdf", ignoreCase = true), widthPx = 160
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        p.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                    IconButton(enabled = i > 0, onClick = { items.add(i - 1, items.removeAt(i)) }) {
-                        Icon(AppIcons.KeyboardArrowUp, "Move up")
-                    }
-                    IconButton(enabled = i < items.lastIndex, onClick = { items.add(i + 1, items.removeAt(i)) }) {
-                        Icon(AppIcons.KeyboardArrowDown, "Move down")
-                    }
-                    IconButton(onClick = { items.removeAt(i) }) { Icon(AppIcons.Close, "Remove") }
                 }
             }
+        }
+        if (items.size > 1) {
+            Text(
+                stringResource(R.string.pick_reorder_hint),
+                style = AppText.caption, color = AppTheme.colors.textSecondary
+            )
         }
     }
 }
@@ -329,23 +485,26 @@ fun MergeScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { items.add(Picked(it, PdfOps.displayName(context, it))) }
     }
-    ToolScaffold("Merge PDF", onBack) {
+    ToolScaffold("Merge PDF", onBack, bottomBar = {
+        PrimaryButton("Merge PDFs", icon = AppIcons.MergeType, enabled = items.size >= 2 && !job.busy, onClick = {
+            val uris = items.map { it.uri }
+            job.launch(scope) {
+                val out = OutputStore.savePdf(context, outName("Merged", items.firstOrNull()?.name)) {
+                    PdfOps.merge(context, uris, it, onProgress = { f -> job.fraction = f })
+                }
+                "Merged ${uris.size} files" to out
+            }
+        })
+    }) {
         FilePickCard(
             "PDF files",
             if (items.isEmpty()) null else "${items.size} selected",
             AppIcons.PictureAsPdf, Accent.Indigo
         ) { picker.launch(arrayOf("application/pdf")) }
         PickedList(items)
-        PrimaryButton("Merge PDFs", icon = AppIcons.MergeType, enabled = items.size >= 2 && !job.busy, onClick = {
-            val uris = items.map { it.uri }
-            job.launch(scope) {
-                val out = OutputStore.savePdf(context, outName("Merged", items.firstOrNull()?.name)) { PdfOps.merge(context, uris, it) }
-                "Merged ${uris.size} files. Saved in Documents/PDF Manager" to out
-            }
-        })
         JobStatus(job, onOpen)
         RecentPdfsStrip(exclude = items.map { it.uri.toString() }.toSet()) { items.add(it) }
-        RecentResults(job.result, { it.startsWith("Merged_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "merged") }, onOpen)
     }
 }
 
@@ -360,23 +519,26 @@ fun ImagesToPdfScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { items.add(Picked(it, PdfOps.displayName(context, it))) }
     }
-    ToolScaffold("Image to PDF", onBack) {
+    ToolScaffold("Image to PDF", onBack, bottomBar = {
+        PrimaryButton("Create PDF", icon = AppIcons.PictureAsPdf, enabled = items.isNotEmpty() && !job.busy, onClick = {
+            val uris = items.map { it.uri }
+            job.launch(scope) {
+                var pages = 0
+                val out = OutputStore.savePdf(context, outName("Images", items.firstOrNull()?.name)) {
+                    pages = PdfOps.imagesToPdf(context, uris, it, onProgress = { f -> job.fraction = f })
+                }
+                "Created a PDF ($pages pages)" to out
+            }
+        })
+    }) {
         FilePickCard(
             "Images",
             if (items.isEmpty()) null else "${items.size} selected",
             AppIcons.Image, Accent.Teal
         ) { picker.launch(arrayOf("image/*")) }
         PickedList(items)
-        PrimaryButton("Create PDF", icon = AppIcons.PictureAsPdf, enabled = items.isNotEmpty() && !job.busy, onClick = {
-            val uris = items.map { it.uri }
-            job.launch(scope) {
-                var pages = 0
-                val out = OutputStore.savePdf(context, outName("Images", items.firstOrNull()?.name)) { pages = PdfOps.imagesToPdf(context, uris, it) }
-                "Created a PDF with $pages pages. Saved in Documents/PDF Manager" to out
-            }
-        })
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("Images_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "images") }, onOpen)
     }
 }
 
@@ -388,15 +550,17 @@ fun PdfToImagesScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var picked by rememberSaveable(stateSaver = PickedSaver) { mutableStateOf(ToolInput.takeFirst()) }
     val job = remember { ToolJob() }
-    ToolScaffold("PDF to Image", onBack) {
-        PdfPickerButton(picked) { picked = it }
+    ToolScaffold("PDF to Image", onBack, bottomBar = {
         PrimaryButton("Convert to JPG", icon = AppIcons.PhotoLibrary, enabled = picked != null && !job.busy, onClick = {
             val p = picked!!
             job.launch(scope) {
-                val n = PdfOps.pdfToImages(context, p.uri, "Image_${baseOf(p.name)}")
-                "Saved $n images in Pictures/PDF Manager" to null
+                val n = PdfOps.pdfToImages(context, p.uri, "Image_${baseOf(p.name)}", onProgress = { f -> job.fraction = f })
+                job.savedIn = PICTURES_FOLDER
+                "Saved $n images" to null
             }
         })
+    }) {
+        PdfPickerButton(picked) { picked = it }
         JobStatus(job)
     }
 }
@@ -516,7 +680,22 @@ fun CropRotateScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     var right by remember { mutableFloatStateOf(0f) }
     val job = remember { ToolJob() }
 
-    ToolScaffold("Crop & Rotate", onBack) {
+    ToolScaffold("Crop & Rotate", onBack, bottomBar = {
+        PrimaryButton(
+            "Apply", icon = AppIcons.CropRotate,
+            enabled = picked != null && !job.busy && (rotation != 0 || top + bottom + left + right > 0f),
+            onClick = {
+                val p = picked!!
+                val (rot, t, b, l, r) = listOf(rotation.toFloat(), top, bottom, left, right)
+                job.launch(scope) {
+                    val out = OutputStore.savePdf(context, outName("Cropped", p.name)) {
+                        PdfOps.cropRotate(context, p.uri, it, rot.toInt(), t, b, l, r)
+                    }
+                    "Done" to out
+                }
+            }
+        )
+    }) {
         PdfPickerButton(picked) { picked = it }
         picked?.let { CropPreview(it, rotation, top, bottom, left, right) }
         OptionCard("Rotate all pages") {
@@ -528,22 +707,8 @@ fun CropRotateScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             MarginSlider("Left", left) { left = it }
             MarginSlider("Right", right) { right = it }
         }
-        PrimaryButton(
-            "Apply", icon = AppIcons.CropRotate,
-            enabled = picked != null && !job.busy && (rotation != 0 || top + bottom + left + right > 0f),
-            onClick = {
-                val p = picked!!
-                val (rot, t, b, l, r) = listOf(rotation.toFloat(), top, bottom, left, right)
-                job.launch(scope) {
-                    val out = OutputStore.savePdf(context, outName("Cropped", p.name)) {
-                        PdfOps.cropRotate(context, p.uri, it, rot.toInt(), t, b, l, r)
-                    }
-                    "Done. Saved in Documents/PDF Manager" to out
-                }
-            }
-        )
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("Cropped_") || it.startsWith("Edited_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "cropped", "edited") }, onOpen)
     }
 }
 
@@ -558,7 +723,25 @@ fun LockUnlockScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     var password by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }
     val job = remember { ToolJob() }
-    ToolScaffold("Lock / Unlock PDF", onBack) {
+    ToolScaffold("Lock / Unlock PDF", onBack, bottomBar = {
+        PrimaryButton(
+            if (lockMode) "Lock PDF" else "Unlock PDF",
+            icon = if (lockMode) AppIcons.Lock else AppIcons.LockOpen,
+            enabled = picked != null && password.isNotEmpty() && !job.busy,
+            onClick = {
+                val p = picked!!
+                val pw = password
+                val lock = lockMode
+                job.launch(scope) {
+                    val suffix = if (lock) "locked" else "unlocked"
+                    val out = OutputStore.savePdf(context, outName(if (lock) "Locked" else "Unlocked", p.name)) {
+                        if (lock) PdfOps.lock(context, p.uri, it, pw) else PdfOps.unlock(context, p.uri, it, pw)
+                    }
+                    "PDF $suffix" to out
+                }
+            }
+        )
+    }) {
         PdfPickerButton(picked) { picked = it }
         OptionCard("Action") {
             ChipRow(listOf(true to "Lock", false to "Unlock"), lockMode) { lockMode = it }
@@ -578,25 +761,8 @@ fun LockUnlockScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             )
         }
-        PrimaryButton(
-            if (lockMode) "Lock PDF" else "Unlock PDF",
-            icon = if (lockMode) AppIcons.Lock else AppIcons.LockOpen,
-            enabled = picked != null && password.isNotEmpty() && !job.busy,
-            onClick = {
-                val p = picked!!
-                val pw = password
-                val lock = lockMode
-                job.launch(scope) {
-                    val suffix = if (lock) "locked" else "unlocked"
-                    val out = OutputStore.savePdf(context, outName(if (lock) "Locked" else "Unlocked", p.name)) {
-                        if (lock) PdfOps.lock(context, p.uri, it, pw) else PdfOps.unlock(context, p.uri, it, pw)
-                    }
-                    "PDF $suffix. Saved in Documents/PDF Manager" to out
-                }
-            }
-        )
         JobStatus(job, onOpen)
-        RecentResults(job.result, { it.startsWith("Locked_") || it.startsWith("Unlocked_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "locked", "unlocked") }, onOpen)
     }
 }
 
@@ -620,6 +786,7 @@ private fun RenameDialog(job: ToolJob) {
     var input by remember(name) { mutableStateOf(name.removeSuffix(".pdf")) }
     val cleaned = input.trim().removeSuffix(".pdf").replace(Regex("[\\\\/:*?\"<>|]"), "_")
     AlertDialog(
+        modifier = Modifier.dialogEnter(),
         onDismissRequest = { job.renameCandidate = null },
         title = { Text("Name your file") },
         text = {
@@ -641,9 +808,10 @@ private fun RenameDialog(job: ToolJob) {
                         }.getOrDefault(false)
                     }
                     if (ok) {
-                        job.status = "Saved as $cleaned.pdf in Documents/PDF Manager"
+                        job.status = "Renamed"
+                        job.statusVersion++
                         ResultsVersion.tick++
-                    } else job.fail("Could not rename the file")
+                    } else job.fail("Could not rename")
                 }
             }) { Text("Save") }
         },

@@ -1,7 +1,15 @@
 package com.pdfmanager.app.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -26,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -40,9 +50,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pdfmanager.app.LibraryViewModel
 import com.pdfmanager.app.R
+import com.pdfmanager.app.data.IncomingPdf
 import com.pdfmanager.app.data.PdfEntity
 import com.pdfmanager.app.ui.tools.ToolCard
 import com.pdfmanager.app.ui.tools.ToolCatalog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The tools offered as Quick actions on Home (the same four as before), resolved through the tool catalog. */
 internal val quickActionIds = listOf("scan", "merge", "img2pdf", "compress")
@@ -67,20 +81,30 @@ fun HomeScreen(
     val recents by vm.recents.collectAsStateWithLifecycle()
     val folders by vm.folders.collectAsStateWithLifecycle()
     val actions = rememberFileActionState()
+    val continueInfo = rememberContinueInfo(recents.firstOrNull())
     val quickTools = remember { quickActionIds.mapNotNull { id -> ToolCatalog.all.firstOrNull { it.id == id } } }
 
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
+    // "Open a PDF" on the empty state. The picked file is copied to the cache first, the same way as
+    // a PDF opened from another app, so its address is safe to put in the viewer route.
+    val scope = rememberCoroutineScope()
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            withContext(Dispatchers.IO) { runCatching { IncomingPdf.copyToCache(context, uri) } }
+                .onSuccess(onOpen)
+                .onFailure {
+                    val msg = if (it.message == "Not a PDF file") R.string.home_not_pdf else R.string.home_open_failed
+                    snackbar.showSnackbar(context.getString(msg))
+                }
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            HomeHeader(
-                showSearch = access.granted,
-                onSearch = { vm.openSearch(); onOpenFiles() }
-            )
-        }
+        topBar = { HomeHeader() }
     ) { padding ->
         if (!access.granted) {
             PermissionHero(Modifier.padding(padding), onGrant = access.request)
@@ -91,6 +115,11 @@ fun HomeScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Search is always visible here, so a new person does not have to find a small icon
+            item(key = "search") { HomeSearchPill(onClick = { vm.openSearch(); onOpenFiles() }) }
+            continueInfo?.let { info ->
+                item(key = "continue") { ContinueReadingCard(info) { onOpen(info.pdf.uri) } }
+            }
             item(key = "quick-title") { HomeSectionTitle(stringResource(R.string.home_quick_actions)) }
             item(key = "quick-actions") {
                 // Two per row: four narrow cards would clip longer (and Bengali) names
@@ -118,16 +147,12 @@ fun HomeScreen(
                 }
             }
             if (recents.isEmpty()) {
-                item(key = "recent-empty") { EmptyRecent(onBrowse = onOpenFiles) }
+                item(key = "recent-empty") { EmptyRecent(onOpenPdf = { picker.launch(arrayOf("application/pdf")) }) }
             } else {
                 items(recents, key = { it.uri }) { pdf ->
-                    PdfItem(
-                        gridMode = false,
+                    RecentFileCard(
                         pdf = pdf,
-                        selected = false,
-                        selecting = false,
                         onClick = { onOpen(pdf.uri) },
-                        onLongClick = {},
                         onFavorite = { vm.setFavorite(listOf(pdf.uri), !pdf.favorite) },
                         onShare = { Share.pdfs(context, listOf(pdf.uri)) },
                         onRename = { actions.renameTarget = pdf },
@@ -144,9 +169,9 @@ fun HomeScreen(
     FileActionDialogs(actions, vm, folders, onNavigate)
 }
 
-/** App logo and name on the left, search on the right; same header geometry as the Tools screen. */
+/** App logo and name; same header geometry as the Tools screen. */
 @Composable
-private fun HomeHeader(showSearch: Boolean, onSearch: () -> Unit) {
+private fun HomeHeader() {
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -162,9 +187,74 @@ private fun HomeHeader(showSearch: Boolean, onSearch: () -> Unit) {
             maxLines = 1,
             modifier = Modifier.weight(1f)
         )
-        if (showSearch) {
-            IconButton(onClick = onSearch) {
-                Icon(AppIcons.Search, contentDescription = stringResource(R.string.home_search))
+    }
+}
+
+/** A wide search field look-alike. Tapping it opens Files with the search field focused. */
+@Composable
+private fun HomeSearchPill(onClick: () -> Unit) {
+    val colors = AppTheme.colors
+    Row(
+        Modifier.fillMaxWidth().height(52.dp)
+            .clip(CircleShape)
+            .background(colors.toolCard)
+            .border(AppDimens.hairline, colors.cardBorder, CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(AppIcons.Search, contentDescription = null, tint = colors.textSecondary)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            stringResource(R.string.home_search_hint),
+            style = MaterialTheme.typography.bodyLarge,
+            color = colors.textSecondary,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+/** The file read last, with the page the reader stopped at (1-based) and the page count. */
+private class ContinueInfo(val pdf: PdfEntity, val page: Int, val total: Int)
+
+/**
+ * Reads the last page saved by the viewer (SharedPreferences "positions", key = uri hash, value = 0-based page).
+ * Null when there is no recent file, the page count is not known yet, or the file was never read past page 1.
+ */
+@Composable
+private fun rememberContinueInfo(pdf: PdfEntity?): ContinueInfo? {
+    if (pdf == null) return null
+    val context = LocalContext.current
+    val pages by rememberPdfPageCount(pdf)
+    // lastOpened changes when the viewer is left, so the saved page is read again when Home comes back
+    val saved = remember(pdf.uri, pdf.lastOpened) {
+        context.getSharedPreferences("positions", android.content.Context.MODE_PRIVATE)
+            .getInt(pdf.uri.hashCode().toString(), 0) + 1
+    }
+    val total = pages ?: 0
+    if (total <= 0 || saved <= 1) return null
+    return ContinueInfo(pdf, saved.coerceAtMost(total), total)
+}
+
+@Composable
+private fun ContinueReadingCard(info: ContinueInfo, onContinue: () -> Unit) {
+    val pdf = info.pdf
+    AppCard(Modifier.fillMaxWidth(), onClick = onContinue) {
+        Row(Modifier.padding(AppDimens.space16), verticalAlignment = Alignment.CenterVertically) {
+            PdfThumb(pdf.uri, Modifier.size(width = 64.dp, height = 84.dp), stamp = "${pdf.modifiedSec}-${pdf.sizeBytes}")
+            Spacer(Modifier.width(AppDimens.space16))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppDimens.space4)) {
+                Text(stringResource(R.string.home_continue), style = AppText.caption, color = MaterialTheme.colorScheme.primary)
+                Text(pdf.name, style = AppText.subtitle, color = AppTheme.colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    stringResource(R.string.home_continue_page, info.page, info.total),
+                    style = AppText.caption, color = AppTheme.colors.textSecondary
+                )
+                LinearProgressIndicator(
+                    progress = { (info.page.toFloat() / info.total).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().padding(top = AppDimens.space4).height(4.dp).clip(CircleShape)
+                )
             }
         }
     }
@@ -181,23 +271,35 @@ private fun HomeSectionTitle(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** Shown while no file has been opened yet; points to the Files tab. */
+/** Shown while no file has been opened yet: icon, one line of text and one clear button that opens the file picker. */
 @Composable
-private fun EmptyRecent(onBrowse: () -> Unit) {
+private fun EmptyRecent(onOpenPdf: () -> Unit) {
     val colors = AppTheme.colors
+    val shape = RoundedCornerShape(AppDimens.cardRadius)
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.toolCard).padding(24.dp),
+        Modifier.fillMaxWidth().clip(shape).background(colors.toolCard)
+            .border(AppDimens.hairline, colors.cardBorder, shape).padding(AppDimens.space24),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(AppIcons.History, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(36.dp))
-        Spacer(Modifier.height(12.dp))
-        Text(
+        IconBadge(AppIcons.PictureAsPdf, Accent.Red, size = 56.dp)
+        Spacer(Modifier.height(AppDimens.space16))
+        FitText(
             stringResource(R.string.home_recent_empty_title),
-            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.fillMaxWidth(),
+            style = AppText.subtitle,
             color = colors.textPrimary,
             textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onBrowse) { Text(stringResource(R.string.home_browse_files)) }
+        Spacer(Modifier.height(AppDimens.space16))
+        // Same size and shape as PrimaryButton, but the label can shrink so it never wraps
+        Button(
+            onClick = onOpenPdf,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Icon(AppIcons.Folder, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(AppDimens.space8))
+            FitText(stringResource(R.string.home_open_pdf), style = MaterialTheme.typography.labelLarge)
+        }
     }
 }

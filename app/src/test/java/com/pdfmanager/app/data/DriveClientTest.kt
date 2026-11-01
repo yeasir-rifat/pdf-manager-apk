@@ -81,7 +81,7 @@ class DriveClientTest {
         val server = FakeDriveServer { FakeReply(200, headers = mapOf("Location" to "http://example.invalid/steal")) }
         try {
             val e = failureOf { upload(TestClientParts().client(server)) }
-            assertEquals("Google could not finish this request", e.message)
+            assertEquals("Google could not finish", e.message)
             assertEquals(1, server.requests.size)
         } finally {
             server.stop()
@@ -110,7 +110,7 @@ class DriveClientTest {
         try {
             val parts = TestClientParts()
             val e = failureOf { upload(parts.client(server)) }
-            assertEquals("Google could not convert this file (locked or damaged?)", e.message)
+            assertEquals("Can't convert. Locked or damaged?", e.message)
             assertFalse(e.message!!.contains("secret"))
             assertTrue(parts.sleeps.isEmpty())
         } finally {
@@ -249,7 +249,7 @@ class DriveClientTest {
         try {
             val parts = TestClientParts()
             val e = failureOf { parts.client(server).exportPdf("abcde12345", File(tmp.root, "o.pdf")) }
-            assertEquals("Please connect your Google account again", e.message)
+            assertEquals("Reconnect your Google account", e.message)
             assertEquals(2, server.requests.size)
         } finally {
             server.stop()
@@ -274,7 +274,7 @@ class DriveClientTest {
         try {
             val parts = TestClientParts()
             val e = failureOf { parts.client(server).exportPdf("abcde12345", File(tmp.root, "o.pdf")) }
-            assertEquals("Google had a problem, try again", e.message)
+            assertEquals("Google problem. Try again", e.message)
             assertEquals(3, server.requests.size)
             assertEquals(listOf(1000L, 2000L), parts.sleeps)
         } finally {

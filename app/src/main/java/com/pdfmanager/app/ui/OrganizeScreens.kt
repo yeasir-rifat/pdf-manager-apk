@@ -84,7 +84,27 @@ fun SplitScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     }
     val rangeInvalid = mode == 0 && ranges.isNotBlank() && groups == null
 
-    ToolScaffold("Split PDF", onBack) {
+    val files = groups?.size ?: 0
+
+    ToolScaffold("Split PDF", onBack, bottomBar = {
+        PrimaryButton(
+            if (files > 0) "Split into $files ${if (files == 1) "file" else "files"}" else "Split",
+            icon = AppIcons.ContentCut,
+            enabled = picked != null && files > 0 && !job.busy,
+            onClick = {
+                val p = picked!!
+                val g = groups!!
+                job.launch(scope) {
+                    var last: android.net.Uri? = null
+                    val n = PdfPages.split(context, p.uri, g) { _, part, write ->
+                        val label = if (part.size == 1) "p${part[0] + 1}" else "p${part.first() + 1}-${part.last() + 1}"
+                        last = OutputStore.savePdf(context, "${baseOf(p.name)}_$label.pdf", write)
+                    }
+                    "Created $n ${if (n == 1) "file" else "files"}" to (if (n == 1) last else null)
+                }
+            }
+        )
+    }) {
         PdfPickerButton(picked) { picked = it }
         PagesState(picked, pages)
         if (total > 0) {
@@ -108,24 +128,6 @@ fun SplitScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 }
             }
         }
-        val files = groups?.size ?: 0
-        PrimaryButton(
-            if (files > 0) "Split into $files ${if (files == 1) "file" else "files"}" else "Split",
-            icon = AppIcons.ContentCut,
-            enabled = picked != null && files > 0 && !job.busy,
-            onClick = {
-                val p = picked!!
-                val g = groups!!
-                job.launch(scope) {
-                    var last: android.net.Uri? = null
-                    val n = PdfPages.split(context, p.uri, g) { _, part, write ->
-                        val label = if (part.size == 1) "p${part[0] + 1}" else "p${part.first() + 1}-${part.last() + 1}"
-                        last = OutputStore.savePdf(context, "${baseOf(p.name)}_$label.pdf", write)
-                    }
-                    "Created $n ${if (n == 1) "file" else "files"}. Saved in Documents/PDF Manager" to (if (n == 1) last else null)
-                }
-            }
-        )
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
         RecentResults(job.status, { Regex("_p\\d+(-\\d+)?\\.pdf$").containsMatchIn(it) }, onOpen)
@@ -146,24 +148,10 @@ fun ExtractDeleteScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val total = pages ?: 0
     val tint = if (keepMode) Accent.Teal else Accent.Red
 
-    ToolScaffold("Extract / Delete", onBack) {
-        PdfPickerButton(picked) { picked = it }
-        PagesState(picked, pages)
-        if (picked != null && total > 0) {
-            ChipRow(listOf(true to "Keep selected", false to "Delete selected"), keepMode) { keepMode = it }
-            SelectionChips(
-                selected.size, total,
-                onAll = { selected = (0 until total).toSet() },
-                onNone = { selected = emptySet() },
-                onInvert = { selected = (0 until total).filter { it !in selected }.toSet() }
-            )
-            PageSelectGrid(
-                picked!!.uri.toString(), total, selected, tint,
-                markIcon = if (keepMode) AppIcons.Check else AppIcons.Close
-            ) { p -> selected = if (p in selected) selected - p else selected + p }
-        }
-        val n = selected.size
-        val canRun = picked != null && total > 0 && n > 0 && (keepMode || n < total) && !job.busy
+    val n = selected.size
+    val canRun = picked != null && total > 0 && n > 0 && (keepMode || n < total) && !job.busy
+
+    ToolScaffold("Extract / Delete", onBack, bottomBar = {
         PrimaryButton(
             when {
                 n == 0 -> if (keepMode) "Keep pages" else "Delete pages"
@@ -182,13 +170,29 @@ fun ExtractDeleteScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                         count = if (keep) PdfPages.keepPages(context, p.uri, os, sel)
                         else PdfPages.deletePages(context, p.uri, os, sel)
                     }
-                    "Saved a PDF with ${pluralPages(count)}. Saved in Documents/PDF Manager" to out
+                    "Saved ${pluralPages(count)}" to out
                 }
             }
         )
+    }) {
+        PdfPickerButton(picked) { picked = it }
+        PagesState(picked, pages)
+        if (picked != null && total > 0) {
+            ChipRow(listOf(true to "Keep selected", false to "Delete selected"), keepMode) { keepMode = it }
+            SelectionChips(
+                selected.size, total,
+                onAll = { selected = (0 until total).toSet() },
+                onNone = { selected = emptySet() },
+                onInvert = { selected = (0 until total).filter { it !in selected }.toSet() }
+            )
+            PageSelectGrid(
+                picked!!.uri.toString(), total, selected, tint,
+                markIcon = if (keepMode) AppIcons.Check else AppIcons.Close
+            ) { p -> selected = if (p in selected) selected - p else selected + p }
+        }
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Extracted_") || it.startsWith("Trimmed_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "extracted", "trimmed") }, onOpen)
     }
 }
 
@@ -205,7 +209,22 @@ fun ReorderScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     val job = remember { ToolJob() }
     val changed = order.indices.any { order[it] != it }
 
-    ToolScaffold("Reorder pages", onBack) {
+    ToolScaffold("Reorder pages", onBack, bottomBar = {
+        PrimaryButton(
+            "Save new order", icon = AppIcons.SwapVert,
+            enabled = picked != null && total > 1 && changed && !job.busy,
+            onClick = {
+                val p = picked!!
+                val newOrder = order.toList()
+                job.launch(scope) {
+                    val out = OutputStore.savePdf(context, outName("Reordered", p.name)) { os ->
+                        PdfPages.reorder(context, p.uri, os, newOrder)
+                    }
+                    "Pages reordered" to out
+                }
+            }
+        )
+    }) {
         PdfPickerButton(picked) { picked = it }
         PagesState(picked, pages)
         if (picked != null && total > 1) {
@@ -226,23 +245,9 @@ fun ReorderScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             }
             PageReorderGrid(picked!!.uri.toString(), order)
         }
-        PrimaryButton(
-            "Save new order", icon = AppIcons.SwapVert,
-            enabled = picked != null && total > 1 && changed && !job.busy,
-            onClick = {
-                val p = picked!!
-                val newOrder = order.toList()
-                job.launch(scope) {
-                    val out = OutputStore.savePdf(context, outName("Reordered", p.name)) { os ->
-                        PdfPages.reorder(context, p.uri, os, newOrder)
-                    }
-                    "Pages reordered. Saved in Documents/PDF Manager" to out
-                }
-            }
-        )
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Reordered_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "reordered") }, onOpen)
     }
 }
 
@@ -260,7 +265,28 @@ fun BlankPageScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     var count by remember { mutableIntStateOf(1) }
     val job = remember { ToolJob() }
 
-    ToolScaffold("Blank page", onBack) {
+    val added = selected.size * count
+
+    ToolScaffold("Blank page", onBack, bottomBar = {
+        PrimaryButton(
+            if (added > 0) "Add ${pluralPages(added).replace("page", "blank page")}" else "Add blank pages",
+            icon = AppIcons.NoteAdd,
+            enabled = picked != null && total > 0 && added > 0 && !job.busy,
+            onClick = {
+                val p = picked!!
+                val anchors = selected
+                val a = after
+                val c = count
+                job.launch(scope) {
+                    var n = 0
+                    val out = OutputStore.savePdf(context, outName("Blank", p.name)) { os ->
+                        n = PdfPages.insertBlank(context, p.uri, os, anchors, a, c)
+                    }
+                    "Added ${pluralPages(n).replace("page", "blank page")}" to out
+                }
+            }
+        )
+    }) {
         PdfPickerButton(picked) { picked = it }
         PagesState(picked, pages)
         if (picked != null && total > 0) {
@@ -278,27 +304,8 @@ fun BlankPageScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 selected = if (p in selected) selected - p else selected + p
             }
         }
-        val added = selected.size * count
-        PrimaryButton(
-            if (added > 0) "Add ${pluralPages(added).replace("page", "blank page")}" else "Add blank pages",
-            icon = AppIcons.NoteAdd,
-            enabled = picked != null && total > 0 && added > 0 && !job.busy,
-            onClick = {
-                val p = picked!!
-                val anchors = selected
-                val a = after
-                val c = count
-                job.launch(scope) {
-                    var n = 0
-                    val out = OutputStore.savePdf(context, outName("Blank", p.name)) { os ->
-                        n = PdfPages.insertBlank(context, p.uri, os, anchors, a, c)
-                    }
-                    "Added ${pluralPages(n).replace("page", "blank page")}. Saved in Documents/PDF Manager" to out
-                }
-            }
-        )
         JobStatus(job, onOpen)
         if (picked == null) RecentPdfsStrip { picked = it }
-        RecentResults(job.result, { it.startsWith("Blank_") }, onOpen)
+        RecentResults(job.result, { madeBy(it, "blank") }, onOpen)
     }
 }

@@ -7,9 +7,25 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.LruCache
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.luminance
+import com.pdfmanager.app.data.PdfEntity
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.geometry.Size
@@ -90,9 +106,20 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import androidx.compose.ui.res.stringResource
+import com.pdfmanager.app.R
+
+/** Height of the floating top bar. The page list keeps this much room above its first page. */
+private val ViewerBarHeight = 64.dp
+
+/** How far (in pixels) a finger must scroll in one direction before the bar hides or shows. */
+private const val BAR_SCROLL_SLOP = 24f
 
 /** Largest bitmap width we ever render. Beyond this the page is just scaled up on screen. */
 private const val MAX_RENDER_WIDTH = 4096
+
+/** Search stops after this many matches so a very common word cannot flood the screen. */
+private const val MAX_SEARCH_HITS = 2000
 
 /** One glyph of a page with its box (0..1 of the page) and what follows it when copied (space / newline). */
 class CharBox(val text: String, val l: Float, val t: Float, val r: Float, val b: Float, var trailing: String = "")
@@ -136,6 +163,34 @@ class PageText(val chars: List<CharBox>) {
 }
 
 data class TextSelection(val page: Int, val a: Int, val b: Int)
+
+/** One match of a search: glyphs [a]..[b] of [page]; [top] is where it starts on the page (0..1). */
+data class SearchHit(val page: Int, val a: Int, val b: Int, val top: Float)
+
+/** The matches to paint, grouped by page, and the one the reader is looking at. */
+class SearchView(val byPage: Map<Int, List<SearchHit>>, val current: SearchHit?)
+
+private val LocalNightMode = compositionLocalOf { false }
+
+/** Backdrop behind the pages in Night mode: darker than the normal viewer background, so black pages stand out. */
+private val NightBackdrop = androidx.compose.ui.graphics.Color(0xFF0E0E10)
+
+/** Thin page edge for Night mode on the light theme. In the dark theme the edge uses outlineVariant. */
+private val NightPageEdge = androidx.compose.ui.graphics.Color(0xFF3C3C43)
+
+/** Turns white paper dark and black text light. */
+private val NightFilter: ColorFilter by lazy {
+    ColorFilter.colorMatrix(
+        ColorMatrix(
+            floatArrayOf(
+                -1f, 0f, 0f, 0f, 255f,
+                0f, -1f, 0f, 0f, 255f,
+                0f, 0f, -1f, 0f, 255f,
+                0f, 0f, 0f, 1f, 0f
+            )
+        )
+    )
+}
 
 /** A sharp, full-resolution piece of a zoomed page. [left]/[top] are in the page's own layout pixels. */
 private class PageRegion(val bitmap: Bitmap, val left: Float, val top: Float, val scale: Float) {
@@ -299,6 +354,54 @@ class PdfHolder(context: Context, uri: Uri) {
         }
     }
 
+    /**
+     * Finds [query] on every page (ignoring case) and reports the matches found so far after each page that
+     * had any. Returns false when the text of this file cannot be read at all.
+     */
+    suspend fun search(query: String, onFound: (List<SearchHit>) -> Unit): Boolean {
+        val found = ArrayList<SearchHit>()
+        for (i in 0 until pageCount) {
+            currentCoroutineContext().ensureActive()
+            val wasCached = textCache.containsKey(i)
+            val t = textOf(i)
+            if (t == null) {
+                if (textFailed) return false
+                continue
+            }
+            var added = false
+            if (t.chars.isNotEmpty() && found.size < MAX_SEARCH_HITS) {
+                // Line breaks count as spaces, so a phrase still matches when it wraps onto the next line
+                val starts = IntArray(t.chars.size)
+                val sb = StringBuilder()
+                for (k in t.chars.indices) {
+                    starts[k] = sb.length
+                    sb.append(t.chars[k].text)
+                    if (t.chars[k].trailing.isNotEmpty()) sb.append(' ')
+                }
+                val text = sb.toString()
+                var from = 0
+                while (found.size < MAX_SEARCH_HITS) {
+                    val m = text.indexOf(query, from, ignoreCase = true)
+                    if (m < 0) break
+                    val a = charIndexAt(starts, m)
+                    val b = charIndexAt(starts, m + query.length - 1)
+                    found.add(SearchHit(i, a, b, t.chars[a].t))
+                    added = true
+                    from = m + query.length
+                }
+            }
+            // Pages without a match are not kept in memory; a long book would otherwise fill it
+            if (!added && !wasCached) textCache.remove(i)
+            if (added) onFound(found.toList())
+        }
+        return true
+    }
+
+    private fun charIndexAt(starts: IntArray, offset: Int): Int {
+        val r = java.util.Arrays.binarySearch(starts, offset)
+        return if (r >= 0) r else (-r - 2).coerceAtLeast(0)
+    }
+
     private fun extractText(doc: PDDocument, index: Int): PageText {
         val chars = ArrayList<CharBox>()
         val raw = ArrayList<FloatArray>()   // x, top, right, bottom in page points
@@ -364,8 +467,9 @@ private fun PasswordDialog(error: String?, busy: Boolean, onDismiss: () -> Unit,
     var password by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }
     AlertDialog(
+        modifier = Modifier.dialogEnter(),
         onDismissRequest = onDismiss,
-        title = { Text("Enter password") },
+        title = { Text(stringResource(R.string.viewer_enter_password)) },
         text = {
             OutlinedTextField(
                 value = password,
@@ -378,22 +482,26 @@ private fun PasswordDialog(error: String?, busy: Boolean, onDismiss: () -> Unit,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { if (password.isNotEmpty() && !busy) onSubmit(password) }),
                 trailingIcon = {
-                    TextButton(onClick = { visible = !visible }) { Text(if (visible) "Hide" else "Show") }
+                    TextButton(onClick = { visible = !visible }) { Text(stringResource(if (visible) R.string.common_hide else R.string.common_show)) }
                 }
             )
         },
         confirmButton = {
             TextButton(onClick = { onSubmit(password) }, enabled = password.isNotEmpty() && !busy) {
-                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Open")
+                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.common_open))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.common_cancel)) } }
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String) -> Unit = { _, _ -> }) {
+fun ViewerScreen(
+    uriString: String, onBack: () -> Unit,
+    onPrint: (String, String) -> Unit = { _, _ -> },
+    onTool: (String) -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -498,76 +606,219 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
     var showPages by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     val current by remember { derivedStateOf { listState.firstVisibleItemIndex + 1 } }
+    val dens = LocalDensity.current
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        topBar = {
-            TopAppBar(
+    // Reading comfort: remembered between files
+    var night by remember { mutableStateOf(ViewerPrefs.night(context)) }
+    var keepOn by remember { mutableStateOf(ViewerPrefs.keepOn(context)) }
+    var orient by remember { mutableIntStateOf(ViewerPrefs.orientation(context)) }
+    ViewerWindowEffects(keepOn, orient)
+
+    // Bookmarks of this file
+    var bookmarks by remember(key) { mutableStateOf(ViewerBookmarks.get(context, key)) }
+    var showBookmarks by remember { mutableStateOf(false) }
+    val haptics = rememberAppHaptics()
+    var showGoTo by remember { mutableStateOf(false) }
+    var showRotation by remember { mutableStateOf(false) }
+    var showInfo by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
+
+    // Search in the text of the PDF
+    var searchOpen by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var hits by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
+    var hitIndex by remember { mutableIntStateOf(0) }
+    var searching by remember { mutableStateOf(false) }
+    var searchFailed by remember { mutableStateOf(false) }
+    val closeSearch = { searchOpen = false; query = "" }
+    BackHandler(enabled = searchOpen) { closeSearch() }
+    LaunchedEffect(query, holder, searchOpen) {
+        hits = emptyList()
+        hitIndex = 0
+        searchFailed = false
+        val hh = holder
+        val q = query.trim().replace(Regex("\\s+"), " ")
+        if (!searchOpen || hh == null || q.isEmpty()) { searching = false; return@LaunchedEffect }
+        delay(350)
+        searching = true
+        val ok = try {
+            hh.search(q) { found -> hits = found }
+        } finally {
+            searching = false
+        }
+        if (!ok) searchFailed = true
+    }
+    val currentHit = hits.getOrNull(hitIndex)
+    // Bring the match the reader is on into view, a third of the way down the screen
+    LaunchedEffect(currentHit) {
+        val hit = currentHit ?: return@LaunchedEffect
+        val hh = holder ?: return@LaunchedEffect
+        val pageW = (viewW - with(dens) { 24.dp.toPx() }).roundToInt().coerceAtLeast(1)
+        val ph = hh.heightPx(hit.page, pageW)
+        val off = (hit.top * ph - viewH / scale / 3f).roundToInt().coerceIn(0, (ph - 1).coerceAtLeast(0))
+        listState.scrollToItem(hit.page, off)
+    }
+    val searchView = remember(hits, currentHit) {
+        if (hits.isEmpty()) null else SearchView(hits.groupBy { it.page }, currentHit)
+    }
+
+    // Short messages (bookmark, copy) appear as a Snackbar above the bottom toolbar instead of a system Toast
+    val snack = remember { SnackbarHostState() }
+    val say: (String) -> Unit = { message ->
+        scope.launch {
+            snack.currentSnackbarData?.dismiss()
+            snack.showSnackbar(message, duration = SnackbarDuration.Short)
+        }
+    }
+
+    // Save a copy of the original file where the reader chooses
+    val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { dest: Uri? ->
+        if (dest != null) scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(Uri.parse(uriString))!!.use { input ->
+                        context.contentResolver.openOutputStream(dest, "wt")!!.use { out -> input.copyTo(out) }
+                    }
+                }.isSuccess
+            }
+            say(context.getString(if (ok) R.string.viewer_copy_saved else R.string.viewer_copy_failed))
+        }
+    }
+
+    // Top bar auto-hide: reading down hides the bar, reading up brings it back, and a tap on a page
+    // toggles it. The bar floats over the pages instead of being the Scaffold's top bar, and the
+    // list keeps a fixed top padding, so hiding or showing it never moves a page.
+    var barVisible by remember { mutableStateOf(true) }
+    val barShown = barVisible || searchOpen || moreMenu || holder == null
+    val atTop by remember {
+        derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 }
+    }
+    LaunchedEffect(atTop) { if (atTop) barVisible = true }
+    val barScroll = remember {
+        object : NestedScrollConnection {
+            private var acc = 0f
+            // Only finger scrolling reaches this; jumps (fast scroller, Go to page) leave the bar alone
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val dy = available.y
+                if (dy == 0f) return Offset.Zero
+                if ((dy > 0f) != (acc > 0f)) acc = 0f
+                acc += dy
+                if (acc < -BAR_SCROLL_SLOP) barVisible = false
+                else if (acc > BAR_SCROLL_SLOP) barVisible = true
+                return Offset.Zero
+            }
+        }
+    }
+    // One place for the bookmark logic: the bottom toolbar and the ⋮ menu both use it
+    val toggleBookmark: () -> Unit = {
+        val added = ViewerBookmarks.toggle(context, key, current)
+        bookmarks = ViewerBookmarks.get(context, key)
+        if (added) haptics.tick()
+        say(
+            if (added) context.getString(R.string.viewer_bookmarked, current) else context.getString(R.string.viewer_bookmark_removed)
+        )
+    }
+    val viewerBar: @Composable () -> Unit = {
+        // The search bar and the normal top bar share one spot, so they fade into each other
+        Crossfade(targetState = searchOpen, animationSpec = tween(150), label = "viewerBar") { searchShown ->
+            if (searchShown) {
+                ViewerSearchBar(
+                    query = query, onQuery = { query = it },
+                    status = when {
+                        searchFailed -> stringResource(R.string.viewer_not_available)
+                        hits.isNotEmpty() -> "${hitIndex + 1} / ${hits.size}${if (hits.size >= MAX_SEARCH_HITS) "+" else ""}"
+                        query.isNotBlank() && !searching -> stringResource(R.string.viewer_no_results)
+                        else -> ""
+                    },
+                    busy = searching, canStep = hits.size > 1,
+                    onPrev = { if (hits.isNotEmpty()) hitIndex = (hitIndex - 1 + hits.size) % hits.size },
+                    onNext = { if (hits.isNotEmpty()) hitIndex = (hitIndex + 1) % hits.size },
+                    onClose = closeSearch,
+                    windowInsets = WindowInsets(0, 0, 0, 0)
+                )
+            } else TopAppBar(
                 title = {
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(AppIcons.ArrowBack, contentDescription = "Back")
+                        Icon(AppIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     if (holder != null) {
                         IconButton(onClick = { showPages = true }) {
-                            Icon(AppIcons.GridView, contentDescription = "All pages")
+                            Icon(AppIcons.GridView, contentDescription = stringResource(R.string.viewer_all_pages))
                         }
                     }
                     IconButton(onClick = { Share.pdfs(context, listOf(uriString)) }) {
-                        Icon(AppIcons.Share, contentDescription = "Share")
+                        Icon(AppIcons.Share, contentDescription = stringResource(R.string.common_share))
                     }
                     Box {
-                        IconButton(onClick = { moreMenu = true }) { Icon(AppIcons.MoreVert, "More") }
-                        DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Print") },
-                                leadingIcon = { Icon(AppIcons.Print, null) },
-                                onClick = { moreMenu = false; onPrint(openUri, title) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Zoom in") },
-                                leadingIcon = { Icon(AppIcons.ZoomIn, null) },
-                                enabled = scale < 4.99f,
-                                onClick = { zoomTo((scale * 1.5f).coerceAtMost(5f), Offset(viewW / 2, viewH / 2)); moreMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Zoom out") },
-                                leadingIcon = { Icon(AppIcons.ZoomOut, null) },
-                                enabled = scale > 1.01f,
-                                onClick = { zoomTo((scale / 1.5f).coerceAtLeast(1f), Offset(viewW / 2, viewH / 2)); moreMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Fit to width") },
-                                leadingIcon = { Icon(AppIcons.FitScreen, null) },
-                                enabled = scale > 1.01f,
-                                onClick = { zoomTo(1f, Offset(viewW / 2, viewH / 2)); moreMenu = false }
-                            )
-                        }
+                        IconButton(onClick = { moreMenu = true }) { Icon(AppIcons.MoreVert, stringResource(R.string.common_more)) }
+                        ViewerMoreMenu(
+                            expanded = moreMenu, onDismiss = { moreMenu = false },
+                            ready = holder != null,
+                            night = night, keepOn = keepOn, orientationLabel = ViewerPrefs.orientationLabel(context, orient),
+                            bookmarked = current in bookmarks, bookmarkCount = bookmarks.size,
+                            canZoomIn = scale < 4.99f, canZoomOut = scale > 1.01f,
+                            onGoTo = { showGoTo = true },
+                            onSearch = { searchOpen = true },
+                            onBookmark = toggleBookmark,
+                            onBookmarks = { showBookmarks = true },
+                            onNight = { night = !night; ViewerPrefs.setNight(context, night) },
+                            onKeepOn = { keepOn = !keepOn; ViewerPrefs.setKeepOn(context, keepOn) },
+                            onRotation = { showRotation = true },
+                            onZoomIn = { zoomTo((scale * 1.5f).coerceAtMost(5f), Offset(viewW / 2, viewH / 2)) },
+                            onZoomOut = { zoomTo((scale / 1.5f).coerceAtLeast(1f), Offset(viewW / 2, viewH / 2)) },
+                            onFit = { zoomTo(1f, Offset(viewW / 2, viewH / 2)) },
+                            onPrint = { onPrint(openUri, title) },
+                            onEdit = { showTools = true },
+                            onOpenWith = { Share.openWith(context, uriString) },
+                            onSave = { saveCopy.launch(if (title.endsWith(".pdf", true)) title else "$title.pdf") },
+                            onInfo = { showInfo = true }
+                        )
                     }
                 },
+                windowInsets = WindowInsets(0, 0, 0, 0),
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
             )
         }
+    }
+
+    Scaffold(
+        containerColor = if (night) NightBackdrop else MaterialTheme.colorScheme.surfaceContainerHigh,
+        // Lifted above the floating bottom toolbar while it is showing
+        snackbarHost = {
+            SnackbarHost(
+                snack,
+                Modifier.padding(bottom = if (barShown && holder != null && !searchOpen) ViewerBottomBarHeight else 0.dp)
+            )
+        },
+        topBar = {
+            // Only the status-bar area stays here, so the pages never run behind the system icons
+            Spacer(
+                Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars)
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+            )
+        }
     ) { padding ->
+        Box(Modifier.fillMaxSize()) {
         val h = holder
         when {
             openFailed -> EmptyState(
                 icon = AppIcons.ErrorOutline,
-                title = "Can't open this PDF",
-                message = "The file may be damaged or in a format this app cannot show.",
+                title = stringResource(R.string.viewer_cant_open_title),
+                message = stringResource(R.string.viewer_cant_open_msg),
                 modifier = Modifier.padding(padding)
             )
             needsPassword -> {
                 EmptyState(
                     icon = AppIcons.Lock,
-                    title = "This PDF is locked",
-                    message = "Enter its password to read it. The original file is not changed.",
+                    title = stringResource(R.string.viewer_locked_title),
+                    message = stringResource(R.string.viewer_locked_msg),
                     modifier = Modifier.padding(padding),
-                    action = { Button(onClick = { passwordError = null; passwordDialog = true }) { Text("Enter password") } }
+                    action = { Button(onClick = { passwordError = null; passwordDialog = true }) { Text(stringResource(R.string.viewer_enter_password)) } }
                 )
                 if (passwordDialog) {
                     PasswordDialog(
@@ -584,8 +835,8 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                                 unlocking = false
                                 result.onSuccess { openUri = Uri.fromFile(it).toString() }
                                     .onFailure {
-                                        passwordError = if (it.message == "Wrong password") "Wrong password. Try again."
-                                        else "Could not open this file."
+                                        passwordError = if (it.message == "Wrong password") context.getString(R.string.viewer_wrong_password)
+                                        else context.getString(R.string.viewer_open_failed)
                                     }
                             }
                         }
@@ -621,6 +872,7 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                     }
                     Box(
                         Modifier.fillMaxSize().clipToBounds()
+                            .nestedScroll(barScroll)
                             .onSizeChanged { viewW = it.width.toFloat(); viewH = it.height.toFloat() }
                             .onGloballyPositioned { c ->
                                 val p = c.positionInRoot()
@@ -654,27 +906,38 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                             }
                             .pointerInput(Unit) {
                                 detectTapGestures(
-                                    onTap = { selection = null },
+                                    onTap = { if (selection != null) selection = null else barVisible = !barVisible },
                                     onDoubleTap = { pos -> zoomTo(if (scale > 1.2f) 1f else 2.5f, pos) }
                                 )
                             }
                             // One-finger sideways pan while zoomed in
                             .draggable(panState, Orientation.Horizontal, enabled = scale > 1.01f)
                     ) {
+                        CompositionLocalProvider(LocalNightMode provides night) {
                         LazyColumn(
-                            Modifier.fillMaxSize().graphicsLayer {
+                            Modifier.fillMaxSize()
+                                // The list is drawn scaled up from its top-left corner, so only 1/scale of its
+                                // height is visible. Give it exactly that height; with the full height, the
+                                // bottom part of the last page can never be scrolled into view while zoomed.
+                                .layout { measurable, constraints ->
+                                    val listH = (constraints.maxHeight / scale).roundToInt().coerceAtLeast(1)
+                                    val placeable = measurable.measure(constraints.copy(minHeight = listH, maxHeight = listH))
+                                    layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(0, 0) }
+                                }
+                                .graphicsLayer {
                                 transformOrigin = TransformOrigin(0f, 0f)
                                 scaleX = scale
                                 scaleY = scale
                                 translationX = offsetX
                             },
                             state = listState,
-                            contentPadding = PaddingValues(12.dp),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = ViewerBarHeight + 12.dp, bottom = 12.dp + ViewerBottomBarHeight),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             items(count = h.pageCount, key = { it }) { index ->
-                                PdfPage(h, index, renderScale, settleTick, viewport, { pagePx = it }, selection) { selection = it }
+                                PdfPage(h, index, renderScale, settleTick, viewport, { pagePx = it }, selection, searchView) { selection = it }
                             }
+                        }
                         }
                     }
                 }
@@ -690,7 +953,7 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                 val sel = selection
                 if (sel != null) {
                     Surface(
-                        Modifier.align(Alignment.TopCenter).padding(top = 10.dp),
+                        Modifier.align(Alignment.TopCenter).padding(top = ViewerBarHeight + 10.dp),
                         shape = RoundedCornerShape(24.dp),
                         color = MaterialTheme.colorScheme.inverseSurface,
                         shadowElevation = 6.dp
@@ -702,7 +965,7 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                                     if (t != null && sel.b < t.chars.size) {
                                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                         cm.setPrimaryClip(android.content.ClipData.newPlainText("PDF text", t.textBetween(sel.a, sel.b)))
-                                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                                        say(context.getString(R.string.common_copied))
                                     }
                                     selection = null
                                 },
@@ -710,7 +973,7 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                             ) {
                                 Icon(AppIcons.ContentCopy, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Copy")
+                                Text(stringResource(R.string.viewer_copy))
                             }
                             TextButton(
                                 onClick = {
@@ -718,9 +981,9 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                                     if (t != null && t.chars.isNotEmpty()) selection = TextSelection(sel.page, 0, t.chars.lastIndex)
                                 },
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.inversePrimary)
-                            ) { Text("Select all") }
+                            ) { Text(stringResource(R.string.common_select_all)) }
                             IconButton(onClick = { selection = null }) {
-                                Icon(AppIcons.Close, "Clear selection", tint = MaterialTheme.colorScheme.inverseOnSurface)
+                                Icon(AppIcons.Close, stringResource(R.string.viewer_clear_selection), tint = MaterialTheme.colorScheme.inverseOnSurface)
                             }
                         }
                     }
@@ -729,9 +992,41 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                 // Drag the handle on the right edge to move through many pages quickly
                 FastScroller(
                     listState, h.pageCount,
-                    Modifier.align(Alignment.CenterEnd).padding(vertical = 8.dp)
+                    Modifier.align(Alignment.CenterEnd).padding(top = ViewerBarHeight + 8.dp, bottom = 8.dp + ViewerBottomBarHeight)
+                )
+
+                // Small floating "12 / 158" badge; tap it to jump to a page
+                PageIndicatorPill(
+                    listState, current, h.pageCount,
+                    onClick = { showGoTo = true },
+                    // The Scaffold padding around this box already keeps clear of the navigation bar
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .padding(bottom = AppDimens.space16 + ViewerBottomBarHeight)
                 )
             }
+        }
+        // The bar itself, floating over the pages
+        AnimatedVisibility(
+            visible = barShown,
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = padding.calculateTopPadding())
+        ) { viewerBar() }
+        // Quick toolbar at the bottom, shown and hidden together with the top bar. It leaves while searching.
+        AnimatedVisibility(
+            visible = barShown && holder != null && !searchOpen,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            ViewerBottomBar(
+                bookmarked = current in bookmarks,
+                onSearch = { searchOpen = true },
+                onPages = { showPages = true },
+                onBookmark = toggleBookmark,
+                onEdit = { showTools = true }
+            )
+        }
         }
     }
 
@@ -742,7 +1037,7 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
             containerColor = MaterialTheme.colorScheme.surface
         ) {
             Text(
-                "Pages · ${h.pageCount}",
+                stringResource(R.string.viewer_pages_title, h.pageCount),
                 Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.titleMedium
             )
@@ -759,6 +1054,7 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
                     Column(
                         Modifier.clip(RoundedCornerShape(10.dp)).clickable {
                             showPages = false
+                            haptics.tick()
                             scope.launch { listState.scrollToItem(index) }
                         },
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -775,18 +1071,59 @@ fun ViewerScreen(uriString: String, onBack: () -> Unit, onPrint: (String, String
             }
         }
     }
+
+    if (showGoTo && h != null) {
+        GoToPageDialog(h.pageCount, current, onDismiss = { showGoTo = false }) { page ->
+            showGoTo = false
+            haptics.tick()
+            scope.launch { listState.scrollToItem(page - 1) }
+        }
+    }
+    if (showBookmarks) {
+        BookmarksDialog(
+            bookmarks, onDismiss = { showBookmarks = false },
+            onOpen = { page -> showBookmarks = false; haptics.tick(); scope.launch { listState.scrollToItem(page - 1) } },
+            onRemove = { page ->
+                ViewerBookmarks.remove(context, key, page)
+                bookmarks = ViewerBookmarks.get(context, key)
+                if (bookmarks.isEmpty()) showBookmarks = false
+            }
+        )
+    }
+    if (showRotation) {
+        RotationDialog(orient, onDismiss = { showRotation = false }) { mode ->
+            orient = mode
+            ViewerPrefs.setOrientation(context, mode)
+            showRotation = false
+        }
+    }
+    if (showInfo) {
+        val info by produceState<DocInfo?>(null, openUri) { value = loadDocInfo(context, Uri.parse(openUri), title) }
+        DocInfoDialog(info) { showInfo = false }
+    }
+    if (showTools) {
+        SendToToolDialog(
+            files = listOf(PdfEntity(openUri, title, 0L, 0L)),
+            onDismiss = { showTools = false },
+            onPick = { route ->
+                ToolInput.set(listOf(Picked(Uri.parse(openUri), title)))
+                showTools = false
+                onTool(route)
+            }
+        )
+    }
 }
 
 @Composable
 private fun PdfPage(
     holder: PdfHolder, index: Int, zoom: Float, settleTick: Int, viewport: ViewportRef,
     onWidthPx: (Int) -> Unit,
-    selection: TextSelection? = null, onSelect: (TextSelection?) -> Unit = {}
+    selection: TextSelection? = null, search: SearchView? = null, onSelect: (TextSelection?) -> Unit = {}
 ) {
     // The page is exactly as wide as the list gives it, and the bitmap is rendered at exactly that many
     // pixels, so it is drawn 1:1 (no stretching, no blur)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        PdfPageContent(holder, index, constraints.maxWidth, zoom, settleTick, viewport, onWidthPx, selection, onSelect)
+        PdfPageContent(holder, index, constraints.maxWidth, zoom, settleTick, viewport, onWidthPx, selection, search, onSelect)
     }
 }
 
@@ -794,9 +1131,10 @@ private fun PdfPage(
 private fun PdfPageContent(
     holder: PdfHolder, index: Int, widthPx: Int, zoom: Float, settleTick: Int, viewport: ViewportRef,
     onWidthPx: (Int) -> Unit,
-    selection: TextSelection?, onSelect: (TextSelection?) -> Unit
+    selection: TextSelection?, search: SearchView?, onSelect: (TextSelection?) -> Unit
 ) {
     LaunchedEffect(widthPx) { onWidthPx(widthPx) }
+    val night = LocalNightMode.current
     val rw = widthPx.coerceIn(64, MAX_RENDER_WIDTH)
     val heightPx = holder.heightPx(index, widthPx)
     var region by remember(holder, index) { mutableStateOf<PageRegion?>(null) }
@@ -829,6 +1167,11 @@ private fun PdfPageContent(
     val highlight = MaterialTheme.colorScheme.primary
     val handleR = with(LocalDensity.current) { 8.dp.toPx() }
     var attempt by remember { mutableIntStateOf(0) }
+    // A page with search matches needs its text boxes to paint them
+    val hasHits = search?.byPage?.containsKey(index) == true
+    LaunchedEffect(hasHits, holder, index) {
+        if (hasHits && pageText == null) pageText = holder.textOf(index)
+    }
     val state by produceState<PageState>(
         holder.cached(index, rw)?.let { PageState.Ready(it) } ?: PageState.Loading,
         index, rw, attempt
@@ -837,12 +1180,24 @@ private fun PdfPageContent(
         val bmp = holder.cached(index, rw) ?: holder.render(index, rw)
         value = if (bmp != null) PageState.Ready(bmp) else PageState.Failed
     }
-    // Pages stay white in dark mode, like paper
+    // Pages stay white in dark mode, like paper. Light mode: a soft, wide shadow lifts the page off the
+    // background. A shadow cannot be seen on dark backgrounds (dark theme, Night mode), so a thin
+    // edge line marks the page there instead.
+    val pageShape = RoundedCornerShape(4.dp)
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val pageEdgeColor = if (night && !darkTheme) NightPageEdge else MaterialTheme.colorScheme.outlineVariant
+    val raised = if (darkTheme || night) Modifier.shadow(3.dp, pageShape)
+    else Modifier.shadow(
+        6.dp, pageShape,
+        ambientColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.10f),
+        spotColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.16f)
+    )
     Box(
         Modifier.fillMaxWidth().fixedHeightPx(heightPx)
             .onGloballyPositioned { c -> val p = c.positionInRoot(); geo.x = p.x; geo.y = p.y }
-            .shadow(3.dp, RoundedCornerShape(4.dp))
-            .clip(RoundedCornerShape(4.dp)).background(androidx.compose.ui.graphics.Color.White)
+            .then(raised)
+            .clip(pageShape).background(if (night) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White)
+            .then(if (darkTheme || night) Modifier.border(Dp.Hairline, pageEdgeColor, pageShape) else Modifier)
             // Long-press a word, then drag to extend the selection
             .pointerInput(holder, index) {
                 var anchorA = 0
@@ -852,7 +1207,7 @@ private fun PdfPageContent(
                         pageScope.launch {
                             val t = pageText ?: holder.textOf(index).also { pageText = it }
                             if (t == null || t.chars.isEmpty()) {
-                                Toast.makeText(ctx, "No selectable text on this page", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(ctx, ctx.getString(R.string.viewer_no_selectable_text), Toast.LENGTH_SHORT).show()
                                 return@launch
                             }
                             val i = t.hit(off.x / size.width, off.y / size.height, strict = true)
@@ -910,27 +1265,29 @@ private fun PdfPageContent(
             is PageState.Ready -> {
                 SideEffect { lastBitmap = s.bitmap }
                 Image(
-                    s.bitmap.asImageBitmap(), contentDescription = "Page ${index + 1}",
-                    modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds
+                    s.bitmap.asImageBitmap(), contentDescription = stringResource(R.string.viewer_page_n, index + 1),
+                    modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds,
+                    colorFilter = if (night) NightFilter else null
                 )
             }
             PageState.Loading -> {
                 val old = lastBitmap
                 if (old != null) Image(
                     old.asImageBitmap(), contentDescription = null,
-                    modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds
-                ) else CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
+                    modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds,
+                    colorFilter = if (night) NightFilter else null
+                ) else Box(Modifier.fillMaxSize().shimmer(dark = night))
             }
             PageState.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    "Couldn't show page ${index + 1}",
+                    stringResource(R.string.viewer_page_failed, index + 1),
                     style = MaterialTheme.typography.bodySmall,
-                    color = androidx.compose.ui.graphics.Color.DarkGray
+                    color = if (night) androidx.compose.ui.graphics.Color.LightGray else androidx.compose.ui.graphics.Color.DarkGray
                 )
                 TextButton(onClick = { attempt++ }) {
                     Icon(AppIcons.Refresh, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Try again")
+                    Text(stringResource(R.string.common_try_again))
                 }
             }
         }
@@ -938,12 +1295,31 @@ private fun PdfPageContent(
             Canvas(Modifier.matchParentSize()) {
                 translate(left = r.left, top = r.top) {
                     scale(scale = 1f / r.scale, pivot = Offset.Zero) {
-                        drawImage(r.image)
+                        drawImage(r.image, colorFilter = if (night) NightFilter else null)
                     }
                 }
             }
         }
         val t = pageText
+        val pageHits = search?.byPage?.get(index)
+        if (!pageHits.isNullOrEmpty() && t != null) {
+            Canvas(Modifier.matchParentSize()) {
+                val others = androidx.compose.ui.graphics.Color(0xFFFFEB3B).copy(alpha = 0.45f)
+                val chosen = androidx.compose.ui.graphics.Color(0xFFFF9800).copy(alpha = 0.6f)
+                for (hit in pageHits) {
+                    val fill = if (hit == search?.current) chosen else others
+                    for (k in hit.a..hit.b) {
+                        if (k >= t.chars.size) break
+                        val c = t.chars[k]
+                        drawRect(
+                            fill,
+                            Offset(c.l * size.width, c.t * size.height),
+                            Size((c.r - c.l) * size.width, (c.b - c.t) * size.height)
+                        )
+                    }
+                }
+            }
+        }
         if (mySel != null && t != null && mySel.b < t.chars.size) {
             Canvas(Modifier.matchParentSize()) {
                 val fill = highlight.copy(alpha = 0.35f)
@@ -999,11 +1375,50 @@ private fun PageThumbBox(holder: PdfHolder, index: Int, selected: Boolean, width
         if (b != null) {
             Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         } else {
-            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Box(Modifier.fillMaxSize().shimmer())
         }
     }
 }
 
+
+/**
+ * Floating page badge at the bottom center. Shows while the reader scrolls and for 1.5 seconds
+ * after, then fades out. Tapping it opens the "Go to page" dialog.
+ */
+@Composable
+private fun PageIndicatorPill(
+    state: LazyListState,
+    current: Int,
+    pageCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(state.isScrollInProgress) {
+        if (state.isScrollInProgress) visible = true
+        else {
+            delay(1500)
+            visible = false
+        }
+    }
+    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut(), modifier = modifier) {
+        val shape = RoundedCornerShape(percent = 50)
+        Surface(
+            Modifier.clip(shape).clickable(onClick = onClick),
+            shape = shape,
+            color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f)
+        ) {
+            Text(
+                "$current / $pageCount",
+                Modifier.padding(horizontal = AppDimens.space12, vertical = AppDimens.space8),
+                style = AppText.caption,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
+}
 
 /**
  * Drive-style fast scroller: a handle on the right edge with the page number beside it.
@@ -1074,7 +1489,11 @@ private fun FastScroller(state: LazyListState, pageCount: Int, modifier: Modifie
                 enter = fadeIn(), exit = fadeOut(),
                 modifier = Modifier.align(Alignment.TopEnd).offset { IntOffset(0, (frac * trackPx).roundToInt()) }
             ) {
-                Row(Modifier.height(thumbH), verticalAlignment = Alignment.CenterVertically) {
+                // Unbounded width: the page number may grow (1, 10, 100 ...) without squeezing the handle
+                Row(
+                    Modifier.wrapContentWidth(Alignment.End, unbounded = true).height(thumbH),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.92f)

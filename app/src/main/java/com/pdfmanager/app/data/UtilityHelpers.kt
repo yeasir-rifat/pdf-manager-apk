@@ -69,14 +69,14 @@ object RepairHelpers {
     /** The message under "Done". [skipped] are 1-based page numbers that could not be read. */
     fun summary(kept: Int, skipped: List<Int>, rebuilt: Boolean, opens: Boolean): String {
         val pages = ConvertHelpers.plural(kept, "page")
-        val head = if (rebuilt) "Rebuilt $pages" else "Rewrote the file with a clean structure ($pages)"
+        val head = if (rebuilt) "Rebuilt $pages" else "Repaired ($pages)"
         val left = if (skipped.isEmpty()) "" else
-            ". Left out ${ConvertHelpers.plural(skipped.size, "page")} that could not be read (${RepairHelpers.pageList(skipped)})"
+            ". Skipped ${ConvertHelpers.plural(skipped.size, "page")} (${RepairHelpers.pageList(skipped)})"
         val tail = when {
-            opens -> ". It opens in the viewer"
-            rebuilt -> ". The system viewer still cannot open it"
-            else -> ". The system viewer still cannot open it. Try Rebuild pages"
+            opens -> ". Opens fine"
+            rebuilt -> ". Still won't open in the viewer"
+            else -> ". Still won't open. Try Rebuild pages"
         }
-        return "$head$left$tail. Saved in Documents/PDF Manager"
+        return "$head$left$tail"
     }
 }

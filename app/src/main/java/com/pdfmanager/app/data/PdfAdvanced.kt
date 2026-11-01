@@ -50,13 +50,13 @@ object PdfCompressor {
     /** Strength 0..100 -> longest allowed image side in pixels. */
     fun maxDimFor(strength: Int): Int = 2600 - strength.coerceIn(0, 100) * 16
 
-    fun compress(context: Context, uri: Uri, out: OutputStream, level: Level): String =
-        compress(context, uri, out, level.quality, level.maxDim)
+    fun compress(context: Context, uri: Uri, out: OutputStream, level: Level, onProgress: (Float) -> Unit = {}): String =
+        compress(context, uri, out, level.quality, level.maxDim, onProgress)
 
-    fun compressAtStrength(context: Context, uri: Uri, out: OutputStream, strength: Int): String =
-        compress(context, uri, out, qualityFor(strength), maxDimFor(strength))
+    fun compressAtStrength(context: Context, uri: Uri, out: OutputStream, strength: Int, onProgress: (Float) -> Unit = {}): String =
+        compress(context, uri, out, qualityFor(strength), maxDimFor(strength), onProgress)
 
-    fun compress(context: Context, uri: Uri, out: OutputStream, quality: Int, maxDim: Int): String {
+    fun compress(context: Context, uri: Uri, out: OutputStream, quality: Int, maxDim: Int, onProgress: (Float) -> Unit = {}): String {
         val originalSize = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
         val counter = CountingOutputStream(out)
         var replaced = 0
@@ -84,22 +84,27 @@ object PdfCompressor {
                         }
                     }
                 }
-                for (page in doc.pages) process(page.resources)
+                val pageTotal = doc.numberOfPages.coerceAtLeast(1)
+                var pageDone = 0
+                for (page in doc.pages) {
+                    process(page.resources)
+                    pageDone++
+                    // Leave the last part of the bar for writing the file
+                    onProgress(0.9f * pageDone / pageTotal)
+                }
                 doc.save(counter)
             }
         }
 
         if (replaced == 0) {
-            return "No images could be reduced. PDFs that are mostly text are already compact."
+            return "No images to reduce. Already compact."
         }
         val newSize = counter.count
         if (originalSize > 0 && newSize >= originalSize) {
-            return "The new file (${Formatter.formatFileSize(context, newSize)}) is not smaller than the original " +
-                "(${Formatter.formatFileSize(context, originalSize)}). Try a stronger setting or keep the original."
+            return "Not smaller than the original. Try a stronger setting."
         }
         val saved = if (originalSize > 0) ((1 - newSize.toDouble() / originalSize) * 100).toInt() else 0
-        return "Reduced from ${Formatter.formatFileSize(context, originalSize)} to " +
-            "${Formatter.formatFileSize(context, newSize)} (-$saved%). Optimized $replaced of $total images."
+        return "Reduced by $saved% ($replaced of $total images)"
     }
 
     /** Strengths at which the estimate is measured; values in between are interpolated. */

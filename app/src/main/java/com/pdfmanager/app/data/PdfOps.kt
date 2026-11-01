@@ -37,15 +37,17 @@ object PdfOps {
     private fun open(context: Context, uri: Uri) =
         context.contentResolver.openInputStream(uri) ?: error("Cannot open ${displayName(context, uri)}")
 
-    fun merge(context: Context, uris: List<Uri>, out: OutputStream) {
+    /** [onProgress] gets 0f..1f after each source file is added. */
+    fun merge(context: Context, uris: List<Uri>, out: OutputStream, onProgress: (Float) -> Unit = {}) {
         val merger = PDFMergerUtility()
         val sources = mutableListOf<PDDocument>()
         val dest = PDDocument(memory())
         try {
-            uris.forEach { u ->
+            uris.forEachIndexed { i, u ->
                 val doc = open(context, u).use { load(it) }
                 sources += doc
                 merger.appendDocument(dest, doc)
+                onProgress((i + 1f) / uris.size)
             }
             dest.save(out)
         } finally {
@@ -54,12 +56,13 @@ object PdfOps {
         }
     }
 
-    fun imagesToPdf(context: Context, uris: List<Uri>, out: OutputStream): Int {
+    fun imagesToPdf(context: Context, uris: List<Uri>, out: OutputStream, onProgress: (Float) -> Unit = {}): Int {
         val doc = PdfDocument()
         var pages = 0
         try {
-            uris.forEach { u ->
-                val bmp = decodeImage(context, u) ?: return@forEach
+            uris.forEachIndexed { i, u ->
+                onProgress(i.toFloat() / uris.size)
+                val bmp = decodeImage(context, u) ?: return@forEachIndexed
                 // A4 in points; landscape pages for wide images
                 val landscape = bmp.width > bmp.height
                 val pw = if (landscape) 842 else 595
@@ -109,7 +112,7 @@ object PdfOps {
     }
 
     /** Renders every page to a JPEG in Pictures/PDF Manager. Returns the page count. */
-    fun pdfToImages(context: Context, uri: Uri, baseName: String): Int {
+    fun pdfToImages(context: Context, uri: Uri, baseName: String, onProgress: (Float) -> Unit = {}): Int {
         val pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: error("Cannot open the PDF")
         var count = 0
         pfd.use {
@@ -129,6 +132,7 @@ object PdfOps {
                         bmp.recycle()
                         count++
                     }
+                    onProgress((i + 1f) / renderer.pageCount)
                 }
             }
         }

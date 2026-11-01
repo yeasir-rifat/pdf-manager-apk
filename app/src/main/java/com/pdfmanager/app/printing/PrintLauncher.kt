@@ -34,12 +34,12 @@ object PrintLauncher {
         val activity = context.findActivity()
         if (activity == null) {
             PrintPreprocessor.discard(cleanupFile)
-            return PrintLaunch.Failed("Can't open printing from here")
+            return PrintLaunch.Failed("Can't print from here")
         }
         val printManager = activity.getSystemService(Context.PRINT_SERVICE) as? PrintManager
         if (printManager == null) {
             PrintPreprocessor.discard(cleanupFile)
-            return PrintLaunch.Failed("Printing is not available on this device")
+            return PrintLaunch.Failed("Printing not available")
         }
         val jobName = displayName.ifBlank { "PDF document" }
         return try {
