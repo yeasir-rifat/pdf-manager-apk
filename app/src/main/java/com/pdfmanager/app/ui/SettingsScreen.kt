@@ -374,7 +374,7 @@ private fun BackupSection(vm: LibraryViewModel) {
         }
     }
 
-    SettingsGroup(AppIcons.History, Accent.Teal, stringResource(R.string.settings_backup)) {
+    SettingsGroup(null, Accent.Teal, stringResource(R.string.settings_backup)) {
         val p = profile
         if (p == null) {
             ValueRow(
@@ -418,13 +418,15 @@ private fun BackupSection(vm: LibraryViewModel) {
                 onClick = { confirmDelete = true }
             )
         }
-        Text(
-            message ?: if (p == null) stringResource(R.string.settings_backup_note_out)
-            else stringResource(R.string.settings_backup_note, p.email) + "\n" + stringResource(R.string.settings_backup_auto_note),
-            Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        // Only the result of the last action (saved, failed, none found); no standing helper text
+        message?.let {
+            Text(
+                it,
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     found?.let { data ->
@@ -551,11 +553,13 @@ private fun AboutSection() {
 
 /** A topic: a small icon and title above one card that holds its rows. */
 @Composable
-private fun SettingsGroup(icon: ImageVector, tint: Color, title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsGroup(icon: ImageVector?, tint: Color, title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(icon, tint, size = 32.dp)
-            Spacer(Modifier.width(10.dp))
+            if (icon != null) {
+                IconBadge(icon, tint, size = 32.dp)
+                Spacer(Modifier.width(10.dp))
+            }
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
         }
         AppCard(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth(), content = content) }

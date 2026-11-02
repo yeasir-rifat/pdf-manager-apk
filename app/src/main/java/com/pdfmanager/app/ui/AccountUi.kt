@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
@@ -137,9 +138,9 @@ fun ProfileButton(modifier: Modifier = Modifier) {
             icon = { AccountAvatar(p, 72.dp) },
             title = { Text(p.name, textAlign = TextAlign.Center) },
             text = {
-                Column(Modifier, verticalArrangement = Arrangement.Center) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        p.email, style = MaterialTheme.typography.bodyMedium,
+                        p.email, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center
                     )
                 }
