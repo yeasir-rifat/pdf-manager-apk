@@ -9,14 +9,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import com.pdfmanager.app.data.GoogleDriveAuth
+import com.pdfmanager.app.data.OfficeHelpers
 
 /**
- * Returns a function that gets a Google Drive access token. Call it from a button's onClick, before the
+ * Returns a function that gets a Google Drive access token for [scope] (drive.file unless the backup asks for
+ * drive.appdata); [accountEmail] pins it to one Google account. Call it from a button's onClick, before the
  * background job starts. [onToken] gets the token; [onMessage] gets a short text when permission was not given.
  * If Google needs the user's agreement first, its own screen opens and the result comes back here.
  */
 @Composable
-fun rememberDriveAuthorizer(onToken: (String) -> Unit, onMessage: (String) -> Unit): () -> Unit {
+fun rememberDriveAuthorizer(
+    onToken: (String) -> Unit,
+    onMessage: (String) -> Unit,
+    scope: String = OfficeHelpers.DRIVE_FILE_SCOPE,
+    accountEmail: String? = null
+): () -> Unit {
     val context = LocalContext.current
     val tokenCallback = rememberUpdatedState(onToken)
     val messageCallback = rememberUpdatedState(onMessage)
@@ -33,9 +40,11 @@ fun rememberDriveAuthorizer(onToken: (String) -> Unit, onMessage: (String) -> Un
         }
     }
 
+    val scopeNow = rememberUpdatedState(scope)
+    val accountNow = rememberUpdatedState(accountEmail)
     return remember(launcher, context) {
         {
-            GoogleDriveAuth.authorize(context) { outcome ->
+            GoogleDriveAuth.authorize(context, scopeNow.value, accountNow.value) { outcome ->
                 when (outcome) {
                     is GoogleDriveAuth.Outcome.Token -> tokenCallback.value(outcome.accessToken)
                     is GoogleDriveAuth.Outcome.Failed -> messageCallback.value(outcome.message)

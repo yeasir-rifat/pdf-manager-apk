@@ -801,10 +801,19 @@ private fun RenameDialog(job: ToolJob) {
                 if ("$cleaned.pdf" != name) scope.launch {
                     val ok = withContext(Dispatchers.IO) {
                         runCatching {
-                            val v = android.content.ContentValues().apply {
-                                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "$cleaned.pdf")
+                            if (android.provider.DocumentsContract.isDocumentUri(context, uri)) {
+                                // A file in the folder chosen in Settings: its Uri changes with its name
+                                val renamed = android.provider.DocumentsContract.renameDocument(
+                                    context.contentResolver, uri, "$cleaned.pdf"
+                                )
+                                if (renamed != null) job.result = renamed.toString()
+                                renamed != null
+                            } else {
+                                val v = android.content.ContentValues().apply {
+                                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "$cleaned.pdf")
+                                }
+                                context.contentResolver.update(uri, v, null, null) > 0
                             }
-                            context.contentResolver.update(uri, v, null, null) > 0
                         }.getOrDefault(false)
                     }
                     if (ok) {

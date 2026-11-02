@@ -41,6 +41,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private var indexJob: Job? = null
 
     init {
+        // Daily automatic backup, if the person turned it on in Settings. Failures are ignored; the next start tries again
+        viewModelScope.launch(Dispatchers.IO) { runCatching { BackupManager.autoBackupIfDue(app) } }
         // Remember the chosen sort order
         sort.onEach { uiPrefs.edit().putString("sort", it.name).apply() }.launchIn(viewModelScope)
     }
@@ -108,7 +110,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             scanning.value = true
             try {
-                withContext(Dispatchers.IO) { dao.sync(scanner.scan()) }
+                withContext(Dispatchers.IO) {
+                    dao.sync(scanner.scan())
+                    // Reading data of earlier versions moves to stable keys; favorites waiting from a restore are applied
+                    runCatching { BackupManager.afterScan(getApplication()) }
+                }
                 startIndexing()
             } finally {
                 lastScan = System.currentTimeMillis()
@@ -148,6 +154,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 messages.emit("Text search off. Stored text deleted")
             }
         }
+    }
+
+    /** After a restore: takes the sort order and the text-search switch from the stored preferences again. */
+    fun reloadPrefs() {
+        sort.value = runCatching { SortMode.valueOf(uiPrefs.getString("sort", null) ?: SortMode.NEWEST.name) }.getOrDefault(SortMode.NEWEST)
+        val on = uiPrefs.getBoolean("searchInside", true)
+        if (on != searchInside.value) setSearchInside(on)
     }
 
     fun addFolder(name: String) = viewModelScope.launch {
@@ -195,6 +208,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun rename(uri: String, newName: String) = viewModelScope.launch {
         val name = newName.trim().let { if (it.endsWith(".pdf", true)) it else "$it.pdf" }
         val resolver = getApplication<Application>().contentResolver
+        val before = runCatching { dao.metaOf(uri) }.getOrNull()
         val ok = withContext(Dispatchers.IO) {
             runCatching {
                 val values = ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, name) }
@@ -202,6 +216,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             }.getOrDefault(false)
         }
         if (ok) {
+            // Bookmarks and the last read page are stored under the file name, so they follow the new name
+            if (before != null) ReaderState.renamed(getApplication(), before.name, name, before.sizeBytes)
             dao.rename(uri, name)
             messages.emit("Renamed")
         } else {

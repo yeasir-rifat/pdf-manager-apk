@@ -551,7 +551,8 @@ fun ViewerScreen(
 
     // Reopen where the reader stopped last time
     val prefs = remember { context.getSharedPreferences("positions", Context.MODE_PRIVATE) }
-    val key = remember(uriString) { uriString.hashCode().toString() }
+    // The key comes from the file name and size, so a backup can be restored on another phone
+    val key = remember(uriString) { com.pdfmanager.app.data.ReaderState.keyFor(context, uriString) }
     val savedPage = remember(uriString) { prefs.getInt(key, 0) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = savedPage)
     LaunchedEffect(listState, holder) {
@@ -607,6 +608,18 @@ fun ViewerScreen(
     var showPages by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     val current by remember { derivedStateOf { listState.firstVisibleItemIndex + 1 } }
+    // The page the reader is looking at (the one across the middle of the screen). Bookmarks use this,
+    // since the first visible page can be just a sliver at the top.
+    val bookmarkPage by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val mid = info.viewportSize.height / 2
+            val items = info.visibleItemsInfo
+            val hit = items.firstOrNull { mid >= it.offset && mid <= it.offset + it.size }
+                ?: items.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - mid) }
+            (hit?.index ?: listState.firstVisibleItemIndex) + 1
+        }
+    }
     val dens = LocalDensity.current
 
     // Reading comfort: remembered between files
@@ -712,11 +725,12 @@ fun ViewerScreen(
     }
     // One place for the bookmark logic: the bottom toolbar and the ⋮ menu both use it
     val toggleBookmark: () -> Unit = {
-        val added = ViewerBookmarks.toggle(context, key, current)
+        val page = bookmarkPage
+        val added = ViewerBookmarks.toggle(context, key, page)
         bookmarks = ViewerBookmarks.get(context, key)
         if (added) haptics.tick()
         say(
-            if (added) context.getString(R.string.viewer_bookmarked, current) else context.getString(R.string.viewer_bookmark_removed)
+            if (added) context.getString(R.string.viewer_bookmarked, page) else context.getString(R.string.viewer_bookmark_removed)
         )
     }
     val viewerBar: @Composable () -> Unit = {
@@ -756,7 +770,7 @@ fun ViewerScreen(
                             expanded = moreMenu, onDismiss = { moreMenu = false },
                             ready = holder != null,
                             night = night, keepOn = keepOn, orientationLabel = ViewerPrefs.orientationLabel(context, orient),
-                            bookmarked = current in bookmarks, bookmarkCount = bookmarks.size,
+                            bookmarked = bookmarkPage in bookmarks, bookmarkCount = bookmarks.size,
                             canZoomIn = scale < 4.99f, canZoomOut = scale > 1.01f,
                             onGoTo = { showGoTo = true },
                             onSearch = { searchOpen = true },
@@ -1041,7 +1055,7 @@ fun ViewerScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             ViewerBottomBar(
-                bookmarked = current in bookmarks,
+                bookmarked = bookmarkPage in bookmarks,
                 onSearch = { searchOpen = true },
                 onPages = { showPages = true },
                 onBookmark = toggleBookmark,

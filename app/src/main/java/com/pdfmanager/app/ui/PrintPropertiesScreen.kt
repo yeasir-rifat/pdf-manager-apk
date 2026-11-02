@@ -391,7 +391,7 @@ fun PrintPropertiesScreen(
             val valid = done != null && done in 0 until mySession.passTotal
             StepDialog(
                 title = "Sheets already printed",
-                subtitle = "Count the sheets that came out right. Printing continues after them.",
+                subtitle = "Count the sheets printed correctly.",
                 onDismiss = { resumeOpen = false }
             ) {
                 OutlinedTextField(
@@ -602,8 +602,7 @@ fun PrintPropertiesScreen(
                     "Advanced",
                     AppIcons.GridView,
                     layoutOpen,
-                    { layoutOpen = !layoutOpen },
-                    hint = "Several pages on one sheet, booklet, page numbers"
+                    { layoutOpen = !layoutOpen }
                 ) {
                     OptionRow("Pages on each sheet") {
                         ChipRow(
@@ -699,7 +698,7 @@ private fun SidesPicker(selected: SidesChoice, onSelect: (SidesChoice) -> Unit) 
         )
     )
     Column {
-        options.forEach { (choice, label, hint) ->
+        options.forEach { (choice, label, _) ->
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp)
                     .selectable(
@@ -714,7 +713,6 @@ private fun SidesPicker(selected: SidesChoice, onSelect: (SidesChoice) -> Unit) 
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(label, style = MaterialTheme.typography.bodyLarge)
-                    Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

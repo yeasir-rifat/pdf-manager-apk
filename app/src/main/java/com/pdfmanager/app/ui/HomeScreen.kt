@@ -183,6 +183,7 @@ private fun HomeHeader() {
             maxLines = 1,
             modifier = Modifier.weight(1f)
         )
+        ProfileButton()
     }
 }
 

@@ -51,6 +51,7 @@ object OfficeHelpers {
 
     const val PDF_MIME = "application/pdf"
     const val DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+    const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 
     private val SOURCE_MIME = mapOf(
         "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

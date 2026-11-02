@@ -57,6 +57,9 @@
 
     <!-- Settings screen -->
     <string name="settings_title">Settings</string>
+    <string name="account_sign_in">Sign in with Google</string>
+    <string name="account_sign_out">Sign out</string>
+    <string name="account_close">Close</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_system">System default</string>
@@ -71,6 +74,30 @@
     <string name="settings_search_inside">Search inside PDFs</string>
     <string name="settings_saving">Saving</string>
     <string name="settings_ask_name">Ask for file name</string>
+    <string name="settings_save_location">Save location</string>
+    <string name="settings_save_default">Documents/PDF Manager</string>
+    <string name="settings_save_reset">Use default folder</string>
+    <string name="settings_backup">Backup</string>
+    <string name="settings_backup_signin">Sign in with Google to back up</string>
+    <string name="settings_backup_now">Backup</string>
+    <string name="settings_backup_auto">Auto backup</string>
+    <string name="settings_backup_auto_note">Once a day when you open the app. Works after you have used Backup once.</string>
+    <string name="settings_backup_never">Never</string>
+    <string name="settings_backup_restore">Restore</string>
+    <string name="settings_backup_delete">Delete</string>
+    <string name="settings_backup_note">Saved in a hidden app folder of your own Google Drive (%1$s): bookmarks, last read pages, favorites and settings. PDF files are not uploaded.</string>
+    <string name="settings_backup_note_out">Back up your bookmarks, last read pages, favorites and settings to your own Google Drive, and restore them on a new phone. PDF files are not uploaded.</string>
+    <string name="settings_backup_done">Backup saved to your Google Drive</string>
+    <string name="settings_backup_none">No backup found in your Google Drive</string>
+    <string name="settings_backup_deleted">Backup deleted from your Google Drive</string>
+    <string name="settings_backup_failed">The backup did not work. Try again</string>
+    <string name="settings_backup_restored">Backup restored</string>
+    <string name="settings_backup_restore_title">Restore this backup?</string>
+    <string name="settings_backup_restore_body">Backup from %1$s (%2$s).\n\nBookmarks and favorites are added to what is on this phone. A last read page is filled in only for files that have none here. Settings are replaced by the backup\'s. Your PDF files are not changed.</string>
+    <string name="settings_backup_restore_confirm">Restore</string>
+    <string name="settings_backup_delete_title">Delete the backup?</string>
+    <string name="settings_backup_delete_body">The backup is removed from your Google Drive. Nothing on this phone changes.</string>
+    <string name="settings_backup_unknown_device">another phone</string>
     <string name="settings_drive">Google Drive</string>
     <string name="settings_drive_sweep">Remove leftover temp files</string>
     <string name="settings_drive_manage">Manage Google access</string>

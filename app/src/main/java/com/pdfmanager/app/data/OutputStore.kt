@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -45,6 +46,9 @@ object OutputStore {
                 )
             }
         }
+        if (SaveFolder.get(context) != null) {
+            return (out + customPdfs(context)).sortedByDescending { it.modifiedSec }.take(limit)
+        }
         return out
     }
 
@@ -74,6 +78,10 @@ object OutputStore {
         context: Context, fileName: String, mime: String, relativePath: String,
         legacyDirType: String, collection: Uri, write: (OutputStream) -> Unit
     ): Uri {
+        // A folder picked in Settings wins; if it cannot be written (deleted, access removed), fall back to the default
+        SaveFolder.get(context)?.let { tree ->
+            saveToTree(context, tree, fileName, mime, write)?.let { return it }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = context.contentResolver
             val values = ContentValues().apply {
@@ -117,5 +125,53 @@ object OutputStore {
         }
         val inserted = runCatching { context.contentResolver.insert(collection, values) }.getOrNull()
         return inserted ?: Uri.fromFile(file)
+    }
+
+    /** Writes into the folder the person chose. Returns null when the folder cannot be used. */
+    private fun saveToTree(context: Context, tree: Uri, fileName: String, mime: String, write: (OutputStream) -> Unit): Uri? {
+        val resolver = context.contentResolver
+        val parent = runCatching {
+            DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        }.getOrNull() ?: return null
+        val doc = runCatching { DocumentsContract.createDocument(resolver, parent, mime, fileName) }.getOrNull() ?: return null
+        try {
+            (resolver.openOutputStream(doc) ?: error("Could not open the output file")).use(write)
+        } catch (e: Exception) {
+            runCatching { DocumentsContract.deleteDocument(resolver, doc) }
+            throw e
+        }
+        return doc
+    }
+
+    /** PDFs in the chosen folder (top level only), as [OutputFile]s. */
+    private fun customPdfs(context: Context): List<OutputFile> {
+        val tree = SaveFolder.get(context) ?: return emptyList()
+        val resolver = context.contentResolver
+        val children = runCatching {
+            DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        }.getOrNull() ?: return emptyList()
+        val out = ArrayList<OutputFile>()
+        runCatching {
+            resolver.query(
+                children,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                ),
+                null, null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getString(4) != "application/pdf") continue
+                    out.add(
+                        OutputFile(
+                            DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)),
+                            c.getString(1) ?: continue, c.getLong(2) / 1000, c.getLong(3)
+                        )
+                    )
+                }
+            }
+        }
+        return out
     }
 }

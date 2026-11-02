@@ -68,6 +68,9 @@ class DriveClient(
         const val MSG_NO_INTERNET = "No internet connection"
         const val MSG_TIMEOUT = "The connection timed out, try again"
         const val MSG_BAD_PDF = "Google returned an invalid PDF"
+        const val MSG_BACKUP_TOO_BIG = "The backup file is too big"
+
+        private val APP_FILE_NAME = Regex("[A-Za-z0-9._-]{1,64}")
 
         /** An exported file bigger than this is refused (Google itself stops at 10 MB). */
         const val MAX_DOWNLOAD_BYTES = 64L * 1024 * 1024
@@ -180,6 +183,77 @@ class DriveClient(
             pages++
         } while (pageToken != null && pages < MAX_LIST_PAGES)
         return ids
+    }
+
+    // ------------------------------------------------------------ app data folder (the backup)
+    // These need the drive.appdata scope. The hidden app data folder holds only this app's files and the
+    // user cannot see it in the Drive app; Drive shows nothing else to this scope, so the listing is safe.
+
+    /** Ids of the files called [name] in the app data folder, newest first. */
+    fun findAppDataFiles(name: String): List<String> {
+        require(APP_FILE_NAME.matches(name)) { "Bad file name" }
+        val q = "name='$name' and 'appDataFolder' in parents and trashed=false"
+        val url = buildString {
+            append(endpoints.api).append("/files?spaces=appDataFolder&q=").append(enc(q))
+            append("&orderBy=").append(enc("modifiedTime desc"))
+            append("&fields=").append(enc("files(id)"))
+            append("&pageSize=20")
+        }
+        val body = call(OfficeHelpers.MAX_ATTEMPTS) { t ->
+            val c = open(url, "GET", t, apiReadMs)
+            try {
+                val code = c.responseCode
+                if (code !in 200..299) throw failure(c, code)
+                c.inputStream.use { readCapped(it, 256 * 1024) }
+            } finally {
+                c.disconnect()
+            }
+        }
+        return DriveJson.fileIds(body).filter { isValidFileId(it) }
+    }
+
+    /** The text of an app data file. More than [maxBytes] is refused. */
+    fun readAppDataText(fileId: String, maxBytes: Int): String {
+        requireId(fileId)
+        return call(OfficeHelpers.MAX_ATTEMPTS) { token ->
+            val c = open("${endpoints.api}/files/$fileId?alt=media", "GET", token, apiReadMs)
+            try {
+                val code = c.responseCode
+                if (code !in 200..299) throw failure(c, code)
+                val text = c.inputStream.use { readCapped(it, maxBytes + 1) }
+                if (text.toByteArray(Charsets.UTF_8).size > maxBytes) throw DriveException(MSG_BACKUP_TOO_BIG)
+                text
+            } finally {
+                c.disconnect()
+            }
+        }
+    }
+
+    /** Creates a new JSON file in the app data folder and returns its id. Older files with the same name are not touched. */
+    fun createAppDataJson(name: String, json: String): String {
+        require(APP_FILE_NAME.matches(name)) { "Bad file name" }
+        val boundary = "pdfm" + java.util.UUID.randomUUID().toString().replace("-", "")
+        val meta = "{\"name\":" + DriveJson.quote(name) + ",\"parents\":[\"appDataFolder\"],\"mimeType\":\"application/json\"}"
+        val body = (
+            "--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$meta\r\n" +
+                "--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$json\r\n--$boundary--"
+            ).toByteArray(Charsets.UTF_8)
+        return call(OfficeHelpers.MAX_ATTEMPTS) { token ->
+            val c = open("${endpoints.upload}/files?uploadType=multipart&fields=id", "POST", token, apiReadMs)
+            try {
+                c.doOutput = true
+                c.setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
+                c.setFixedLengthStreamingMode(body.size)
+                c.outputStream.use { it.write(body) }
+                val code = c.responseCode
+                if (code !in 200..299) throw failure(c, code)
+                val id = DriveJson.stringField(c.inputStream.use { readCapped(it, 64 * 1024) }, "id")
+                if (id == null || !isValidFileId(id)) throw DriveException(OfficeHelpers.messageFor(0, null), code)
+                id
+            } finally {
+                c.disconnect()
+            }
+        }
     }
 
     // ------------------------------------------------------------ one request with tries

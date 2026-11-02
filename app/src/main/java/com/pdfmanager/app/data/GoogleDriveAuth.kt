@@ -1,23 +1,30 @@
 package com.pdfmanager.app.data
 
+import android.accounts.Account
 import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
+import android.util.Log
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.tasks.Tasks
 import java.util.concurrent.TimeUnit
 
 /**
- * Asks the user for permission to use their own Google Drive (scope drive.file only: the app sees just the
- * files it makes itself). The access token lives in memory only, it is never saved. No client ID or secret
- * is needed: Google identifies the app by package name and signing key.
+ * Asks the user for permission to use their own Google Drive: drive.file (the app sees just the files it makes
+ * itself, used by the Office tools) or drive.appdata (only the hidden app data folder, used by the backup).
+ * The access token lives in memory only, it is never saved. No client ID or secret is needed: Google identifies
+ * the app by package name and signing key (SHA-1), so an Android OAuth client with exactly that package name
+ * and SHA-1 must exist in Google Cloud Console.
  */
 object GoogleDriveAuth {
+
+    private const val TAG = "DriveAuth"
 
     /** What one authorize call came back with. */
     sealed interface Outcome {
@@ -34,13 +41,38 @@ object GoogleDriveAuth {
     const val MSG_NOT_GRANTED = "Google access was not granted"
     const val MSG_NO_PLAY_SERVICES = "Google Play services are required"
 
+    // Status codes from com.google.android.gms.common.api.CommonStatusCodes
+    private const val CODE_NETWORK_ERROR = 7
+    private const val CODE_DEVELOPER_ERROR = 10
+
     fun playServicesAvailable(context: Context): Boolean =
         GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
 
-    private fun request(): AuthorizationRequest =
+    /**
+     * [scope] is drive.file for the Office tools and drive.appdata for the backup. [accountEmail], when given,
+     * pins the request to that Google account (the one signed in on Home), so a backup never goes to another account.
+     */
+    private fun request(scope: String, accountEmail: String?): AuthorizationRequest =
         AuthorizationRequest.builder()
-            .setRequestedScopes(listOf(Scope(OfficeHelpers.DRIVE_FILE_SCOPE)))
+            .setRequestedScopes(listOf(Scope(scope)))
+            .apply { if (!accountEmail.isNullOrBlank()) setAccount(Account(accountEmail, "com.google")) }
             .build()
+
+    /**
+     * Turns an exception into a short message that still starts with [MSG_NOT_GRANTED] but also tells the
+     * real reason, so a wrong OAuth setup can be told apart from a network problem or a cancelled screen.
+     */
+    internal fun failureMessage(e: Throwable?): String {
+        if (e != null) Log.e(TAG, "Google authorization failed", e)
+        val code = (e as? ApiException)?.statusCode ?: return MSG_NOT_GRANTED
+        return when (code) {
+            CODE_DEVELOPER_ERROR ->
+                "$MSG_NOT_GRANTED (code $code: package name or SHA-1 does not match the OAuth client in Google Cloud)"
+            CODE_NETWORK_ERROR ->
+                "$MSG_NOT_GRANTED (code $code: no internet connection)"
+            else -> "$MSG_NOT_GRANTED (code $code)"
+        }
+    }
 
     private fun outcomeOf(result: AuthorizationResult): Outcome {
         val pending = result.pendingIntent
@@ -48,7 +80,10 @@ object GoogleDriveAuth {
         return when {
             result.hasResolution() && pending != null -> Outcome.NeedsConsent(pending.intentSender)
             token != null -> Outcome.Token(token)
-            else -> Outcome.Failed(MSG_NOT_GRANTED)
+            else -> {
+                Log.w(TAG, "Authorization returned neither a token nor a consent screen")
+                Outcome.Failed(MSG_NOT_GRANTED)
+            }
         }
     }
 
@@ -56,30 +91,40 @@ object GoogleDriveAuth {
      * Gets an access token. If the user already agreed once this is silent; otherwise the answer is
      * [Outcome.NeedsConsent]. [onResult] is called on the main thread.
      */
-    fun authorize(context: Context, onResult: (Outcome) -> Unit) {
+    fun authorize(
+        context: Context,
+        scope: String = OfficeHelpers.DRIVE_FILE_SCOPE,
+        accountEmail: String? = null,
+        onResult: (Outcome) -> Unit
+    ) {
         if (!playServicesAvailable(context)) {
             onResult(Outcome.Failed(MSG_NO_PLAY_SERVICES))
             return
         }
         try {
-            Identity.getAuthorizationClient(context).authorize(request())
+            Identity.getAuthorizationClient(context).authorize(request(scope, accountEmail))
                 .addOnSuccessListener { result -> onResult(outcomeOf(result)) }
-                .addOnFailureListener { onResult(Outcome.Failed(MSG_NOT_GRANTED)) }
+                .addOnFailureListener { e -> onResult(Outcome.Failed(failureMessage(e))) }
         } catch (e: Exception) {
-            onResult(Outcome.Failed(MSG_NOT_GRANTED))
+            onResult(Outcome.Failed(failureMessage(e)))
         }
     }
 
     /**
      * A token for use on a background thread: waits for the answer, so never call it on the main thread.
-     * Used when Google answered 401 in the middle of a conversion. Returns null when the user would have to agree again.
+     * Used when Google answered 401 in the middle of a request. Returns null when the user would have to agree again.
      */
-    fun tokenBlocking(context: Context): String? {
+    fun tokenBlocking(
+        context: Context,
+        scope: String = OfficeHelpers.DRIVE_FILE_SCOPE,
+        accountEmail: String? = null
+    ): String? {
         if (!playServicesAvailable(context)) return null
         return try {
-            val result = Tasks.await(Identity.getAuthorizationClient(context).authorize(request()), 30, TimeUnit.SECONDS)
+            val result = Tasks.await(Identity.getAuthorizationClient(context).authorize(request(scope, accountEmail)), 30, TimeUnit.SECONDS)
             (outcomeOf(result) as? Outcome.Token)?.accessToken
         } catch (e: Exception) {
+            Log.e(TAG, "Silent token refresh failed", e)
             null
         }
     }
@@ -89,6 +134,6 @@ object GoogleDriveAuth {
         try {
             outcomeOf(Identity.getAuthorizationClient(context).getAuthorizationResultFromIntent(data))
         } catch (e: Exception) {
-            Outcome.Failed(MSG_NOT_GRANTED)
+            Outcome.Failed(failureMessage(e))
         }
 }

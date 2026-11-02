@@ -41,6 +41,12 @@ abstract class PdfDao {
     @Query("SELECT uri, name, sizeBytes, modifiedSec FROM pdfs")
     abstract suspend fun allMeta(): List<PdfMeta>
 
+    @Query("SELECT uri, name, sizeBytes, modifiedSec FROM pdfs WHERE favorite = 1")
+    abstract suspend fun favoriteMeta(): List<PdfMeta>
+
+    @Query("SELECT uri, name, sizeBytes, modifiedSec FROM pdfs WHERE uri = :uri")
+    abstract suspend fun metaOf(uri: String): PdfMeta?
+
     @Query("SELECT uri FROM pdfs")
     abstract suspend fun allUris(): List<String>
 
