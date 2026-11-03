@@ -51,7 +51,8 @@ object GeminiRequest {
             else -> "Keep the answer a normal length."
         }
         val math = "Write formulas and equations in plain text with Unicode symbols, never LaTeX or dollar signs."
-        val base = "$role $lang $size $math"
+        val fmt = "Format the answer in Markdown: use **bold** for key terms and step titles, *italic* for emphasis, \"-\" bullet lists, numbered lists for steps, and ## headings only for longer answers. Keep each list item on one line and do not wrap the whole answer in a code block."
+        val base = "$role $lang $size $math $fmt"
         return if (context.isNullOrBlank()) base else "$base $context"
     }
 

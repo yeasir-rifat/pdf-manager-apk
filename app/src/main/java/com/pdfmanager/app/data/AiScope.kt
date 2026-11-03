@@ -97,6 +97,7 @@ sealed interface AiScope {
         }
 
         /** Tells Gemini how to write page references, so the app can turn them into chips. */
+        const val NO_PAGE_REF_RULE = "Never mention page numbers or write references such as [p. N], (p. 3) or (page 3) in the answer."
         const val PAGE_REF_RULE = "When you mention a page, write it as [p. N] with the page number inside the attached PDF, where page 1 is the first page of the attached PDF, whatever page numbers are printed on the pages."
 
         /**

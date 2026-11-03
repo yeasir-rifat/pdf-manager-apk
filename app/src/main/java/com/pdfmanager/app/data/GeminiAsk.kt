@@ -189,8 +189,8 @@ object GeminiAsk {
         GeminiAskResult.Failed(e, if (e == GeminiError.Limit) GeminiRetry.seconds(r) else 0)
 
     private fun systemContext(scope: AiScope, contextLine: String?): String? =
-        // The page rule goes in with every scoped question, so [p. N] chips work in answers
-        listOfNotNull(contextLine, AiScope.PAGE_REF_RULE.takeIf { scope != AiScope.Whole || contextLine != null })
+        // Answers never carry page references, so every scoped question tells the model not to write them
+        listOfNotNull(contextLine, AiScope.NO_PAGE_REF_RULE.takeIf { scope != AiScope.Whole || contextLine != null })
             .joinToString(" ").ifBlank { null }
 
     private suspend fun send(

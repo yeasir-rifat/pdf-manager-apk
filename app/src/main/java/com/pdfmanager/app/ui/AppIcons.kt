@@ -101,6 +101,9 @@ object AppIcons {
     val GoToPage: ImageVector by lazy { icon("GoToPage", "M11.59 7.41 15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z") }
     val Sparkle: ImageVector by lazy { icon("Sparkle", "M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z") }
     val Send: ImageVector by lazy { icon("Send", "M2.01 21 23 12 2.01 3 2 10l15 2-15 2z") }
+    // Square with a pencil: start a new chat
+    val NewChat: ImageVector by lazy { icon("NewChat", "M5 3h8l-2 2H5v14h14v-6l2-2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M9 12l8.5-8.5 3 3L12 15H9z") }
+    val ArrowForward: ImageVector by lazy { icon("ArrowForward", "M5 13h11.17l-4.88 4.88a.996.996 0 1 0 1.41 1.41l6.59-6.59a.996.996 0 0 0 0-1.41l-6.59-6.59a.996.996 0 1 0-1.41 1.41L16.17 11H5c-.55 0-1 .45-1 1s.45 1 1 1z", autoMirror = true) }
     val Stop: ImageVector by lazy { icon("Stop", "M6 6h12v12H6z") }
 }
 

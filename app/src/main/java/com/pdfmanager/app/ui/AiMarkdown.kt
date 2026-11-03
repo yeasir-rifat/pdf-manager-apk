@@ -39,6 +39,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,11 +54,15 @@ import com.pdfmanager.app.data.AiSpan
  */
 @Composable
 fun AiMarkdown(text: String, onPage: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val blocks = remember(text) { AiMarkdownParser.parse(text) }
+    val blocks = remember(text) { AiMarkdownParser.parse(stripPageRefs(text)) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (b in blocks) BlockView(b, onPage)
     }
 }
+
+/** Answers carry no page references. Removes any `[p. 12]` the model still writes, and a half-streamed `[p.` at the end. */
+fun stripPageRefs(text: String): String =
+    text.replace(Regex("""\s*\[p\.?\s*\d*\]"""), "").replace(Regex("""\s*\[p?\.?\s*\d*$"""), "")
 
 private fun TextStyle.roomy(): TextStyle = if (fontSize.isSp) copy(lineHeight = fontSize * 1.5f) else this
 
@@ -142,14 +147,21 @@ private fun SpanText(
     color: Color = Color.Unspecified,
 ) {
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
+    // The app fonts are single files, so a weight or style inside a line cannot be picked by Compose.
+    // Bold uses the bold font file (the family of the title styles), italic is a slant of the same glyphs.
+    val boldFamily = MaterialTheme.typography.titleMedium.fontFamily
     val pages = LinkedHashSet<Int>()
     val annotated = buildAnnotatedString {
         for (sp in spans) when (sp) {
             is AiSpan.Run -> withStyle(
                 SpanStyle(
                     fontWeight = if (sp.bold) FontWeight.Bold else null,
-                    fontStyle = if (sp.italic) FontStyle.Italic else null,
-                    fontFamily = if (sp.code) FontFamily.Monospace else null,
+                    fontFamily = when {
+                        sp.code -> FontFamily.Monospace
+                        sp.bold -> boldFamily
+                        else -> null
+                    },
+                    textGeometricTransform = if (sp.italic) TextGeometricTransform(scaleX = 1f, skewX = -0.22f) else null,
                     background = if (sp.code) codeBackground else Color.Unspecified,
                 )
             ) { append(sp.text) }

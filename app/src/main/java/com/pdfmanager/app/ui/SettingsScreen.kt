@@ -156,7 +156,7 @@ private fun AppearanceSection(
     onPureBlack: (Boolean) -> Unit
 ) {
     val wallpaperColorsAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    SettingsGroup(AppIcons.Palette, Accent.Violet, stringResource(R.string.settings_appearance)) {
+    SettingsGroup(stringResource(R.string.settings_appearance)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SettingsLabel(stringResource(R.string.settings_theme))
             Segmented(
@@ -211,7 +211,7 @@ private fun FilesSection(vm: LibraryViewModel) {
         SortMode.NEWEST to R.string.settings_sort_newest,
         SortMode.LARGEST to R.string.settings_sort_largest
     )
-    SettingsGroup(AppIcons.Folder, Accent.Orange, stringResource(R.string.settings_files)) {
+    SettingsGroup(stringResource(R.string.settings_files)) {
         ValueRow(
             title = stringResource(R.string.settings_sort),
             value = stringResource(sortOptions.first { it.first == sort }.second),
@@ -255,7 +255,7 @@ private fun SavingSection() {
             folder = SaveFolder.label(ctx)
         }
     }
-    SettingsGroup(AppIcons.SaveAlt, Accent.Teal, stringResource(R.string.settings_saving)) {
+    SettingsGroup(stringResource(R.string.settings_saving)) {
         SwitchRow(
             title = stringResource(R.string.settings_ask_name),
             checked = askName,
@@ -284,7 +284,7 @@ private fun SavingSection() {
 private fun FeedbackSection() {
     val ctx = LocalContext.current
     var vibration by remember { mutableStateOf(HapticPrefs.enabled(ctx)) }
-    SettingsGroup(AppIcons.Vibration, Accent.Rose, stringResource(R.string.settings_feedback)) {
+    SettingsGroup(stringResource(R.string.settings_feedback)) {
         SwitchRow(
             title = stringResource(R.string.settings_vibration),
             checked = vibration,
@@ -331,7 +331,7 @@ private fun AiSection() {
     val languageKeys = AiPrefs.languages
     val lengthKeys = AiPrefs.lengths
 
-    SettingsGroup(AppIcons.Sparkle, Accent.Violet, stringResource(R.string.ai_set_title)) {
+    SettingsGroup(stringResource(R.string.ai_set_title)) {
         ValueRow(
             title = stringResource(R.string.ai_set_key),
             value = keyHint ?: stringResource(R.string.ai_set_key_none),
@@ -784,7 +784,7 @@ private fun DriveSection() {
         },
         onMessage = { message -> sweepMessage = message; sweeping = false }
     )
-    SettingsGroup(AppIcons.Cloud, Accent.Indigo, stringResource(R.string.settings_drive)) {
+    SettingsGroup(stringResource(R.string.settings_drive)) {
         ValueRow(
             title = stringResource(R.string.settings_drive_sweep),
             value = null,
@@ -828,7 +828,7 @@ private fun AboutSection() {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
             .getOrNull().orEmpty()
     }
-    SettingsGroup(AppIcons.Info, Accent.Green, stringResource(R.string.settings_about)) {
+    SettingsGroup(stringResource(R.string.settings_about)) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -840,13 +840,9 @@ private fun AboutSection() {
 
 /** A topic: a small icon and title above one card that holds its rows. */
 @Composable
-private fun SettingsGroup(icon: ImageVector?, tint: Color, title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) {
-                IconBadge(icon, tint, size = 32.dp)
-                Spacer(Modifier.width(10.dp))
-            }
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
         }
         AppCard(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth(), content = content) }
@@ -881,10 +877,10 @@ private fun ValueRow(
             .alpha(if (enabled) 1f else 0.5f),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        FitText(title, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyLarge, color = titleColor)
+        // The title takes all the free width, so the value, the icon and the arrow always sit at the right edge
+        FitText(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = titleColor)
         Spacer(Modifier.width(12.dp))
         if (value != null) {
-            Spacer(Modifier.weight(1f))
             Text(
                 value,
                 Modifier.widthIn(max = 190.dp),
@@ -893,7 +889,7 @@ private fun ValueRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-        } else Spacer(Modifier.weight(1f))
+        }
         trailing?.invoke()
         if (showChevron) {
             Icon(AppIcons.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -372,7 +372,7 @@
     <string name="ai_tag_page">Page %1$d</string>
     <string name="ai_tag_pages">Pages %1$s</string>
     <string name="ai_range_set">Set</string>
-    <string name="ai_input">Ask</string>
+    <string name="ai_input">Ask anything...</string>
     <string name="ai_send">Send</string>
     <string name="ai_stop">Stop</string>
     <string name="ai_redo">Redo</string>

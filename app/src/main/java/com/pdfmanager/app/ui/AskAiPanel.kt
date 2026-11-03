@@ -51,6 +51,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -271,7 +272,7 @@ fun AskAiPanel(
     fun copy(answer: String) {
         runCatching {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("", AiMarkdownParser.toPlain(answer)))
+            cm.setPrimaryClip(ClipData.newPlainText("", AiMarkdownParser.toPlain(stripPageRefs(answer))))
         }
         haptics.confirm()
         coroutines.launch {
@@ -282,7 +283,7 @@ fun AskAiPanel(
     fun share(answer: String) {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, AiMarkdownParser.toPlain(answer))
+            putExtra(Intent.EXTRA_TEXT, AiMarkdownParser.toPlain(stripPageRefs(answer)))
         }
         runCatching { context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
@@ -304,53 +305,65 @@ fun AskAiPanel(
         }
     }
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        // The sheet cannot be swiped away by itself. Only the handle (see below) closes the panel.
+        confirmValueChange = { it != SheetValue.Hidden },
+    )
     val config = LocalConfiguration.current
     val density = LocalDensity.current
     val screenHeight = config.screenHeightDp.dp
     val imeHeight = with(density) { WindowInsets.ime.getBottom(density).toDp() }
     val imeOpen = imeHeight > 0.dp
     val compact = config.screenHeightDp < 480
-    // Dragging the handle up opens the panel to full height, dragging it down brings it back to 62 percent.
+    // Dragging the handle up opens the panel to the full screen, dragging it down brings it back to 62 percent.
     // The panel is never so tall that the keyboard pushes its top off screen.
     var expanded by remember { mutableStateOf(false) }
-    val target = if (expanded) screenHeight - 96.dp else screenHeight * 0.62f
+    val statusBar = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    val target = if (expanded) screenHeight - statusBar else screenHeight * 0.62f
     val panelHeight by animateDpAsState(
-        minOf(target, screenHeight - imeHeight - 48.dp).coerceAtLeast(if (compact) 220.dp else 280.dp),
+        minOf(target, screenHeight - imeHeight).coerceAtLeast(if (compact) 220.dp else 280.dp),
         label = "askAiHeight",
     )
+    // Drag up on the handle or the title row: full screen. Drag down: back to 62 percent, and from there the panel closes.
+    val dragHandleModifier = Modifier.pointerInput(expanded) {
+        var total = 0f
+        detectVerticalDragGestures(
+            onDragStart = { total = 0f },
+            onDragEnd = {
+                if (total < -40f) expanded = true
+                else if (total > 40f) { if (expanded) expanded = false else onDismiss() }
+            },
+            onVerticalDrag = { _, delta -> total += delta },
+        )
+    }
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        // Back and a tap outside do nothing. The panel closes only when the handle is dragged down.
+        onDismissRequest = {},
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = {
-            Box(
-                Modifier.pointerInput(expanded) {
-                    var total = 0f
-                    detectVerticalDragGestures(
-                        onDragStart = { total = 0f },
-                        onDragEnd = {
-                            if (total < -40f) expanded = true
-                            else if (total > 40f) { if (expanded) expanded = false else onDismiss() }
-                        },
-                        onVerticalDrag = { _, delta -> total += delta },
-                    )
-                }
-            ) { BottomSheetDefaults.DragHandle() }
+            Box(Modifier.fillMaxWidth().then(dragHandleModifier), contentAlignment = Alignment.Center) {
+                BottomSheetDefaults.DragHandle()
+            }
         },
     ) {
         Box(Modifier.fillMaxWidth().imePadding().height(panelHeight)) {
         Column(Modifier.fillMaxSize().padding(horizontal = AppDimens.space16)) {
-            // Header: title on the left, New chat and AI settings on the right. Drag down and Back close the panel.
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.ai_title),
-                    style = AppText.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).semantics { heading() },
-                )
+            // Header: title on the left, New chat and AI settings on the right. Drag the handle down to close the panel.
+            Row(Modifier.fillMaxWidth().then(dragHandleModifier), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(AppIcons.Sparkle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.size(AppDimens.space8))
+                    Text(
+                        stringResource(R.string.ai_title),
+                        style = AppText.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                }
                 if (hasKey) {
                     IconButton(onClick = { state.newChat() }) {
-                        Icon(AppIcons.NoteAdd, stringResource(R.string.ai_new_chat))
+                        Icon(AppIcons.NewChat, stringResource(R.string.ai_new_chat))
                     }
                 }
                 IconButton(onClick = onOpenSettings) { Icon(AppIcons.Settings, stringResource(R.string.ai_settings)) }
@@ -367,11 +380,6 @@ fun AskAiPanel(
                     else Chat(state, onPage = onGoToPage, onCopy = { copy(it) }, onShare = { share(it) }, onRedo = { redo(it) })
                 }
                 Spacer(Modifier.height(AppDimens.space8))
-                // On a short screen (landscape) the keyboard needs the room, so the chips wait until it closes
-                if (!(compact && imeOpen)) {
-                    Chips(state, enabled = !state.loading && state.cooldownLeft == 0, onChip = { chip, label -> send(label, chip.prompt) })
-                    Spacer(Modifier.height(AppDimens.space8))
-                }
                 InputRow(state, onSend = { send(state.input.trim(), state.input.trim()) }, onStop = { state.stop() })
                 Spacer(Modifier.height(AppDimens.space12))
             }
@@ -404,18 +412,6 @@ fun AskAiPanel(
         )
     }
 }
-
-@Composable
-private fun chipLabel(chip: AiChip): String = stringResource(
-    when (chip) {
-        AiChip.Explain -> R.string.ai_chip_explain
-        AiChip.Summarize -> R.string.ai_chip_summarize
-        AiChip.Detail -> R.string.ai_chip_detail
-        AiChip.Points -> R.string.ai_chip_points
-        AiChip.Outline -> R.string.ai_chip_outline
-        AiChip.Quiz -> R.string.ai_chip_quiz
-    }
-)
 
 @Composable
 private fun scopeTag(scope: AiScope): String = when (scope) {
@@ -563,43 +559,39 @@ private fun Chat(
         snapshotFlow { listState.isScrollInProgress }.collect { moving -> if (!moving) stuck = atBottom() }
     }
     Box(Modifier.fillMaxSize()) {
-    LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(AppDimens.space8)) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(AppDimens.space24)) {
         items(state.exchanges, key = { it.id }) { ex ->
-            Column(verticalArrangement = Arrangement.spacedBy(AppDimens.space8)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppDimens.space12)) {
+                // Your message: a soft grey bubble on the right
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Column(
-                        Modifier.widthIn(max = 320.dp)
-                            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                            .semantics(mergeDescendants = true) {}
+                    Box(
+                        Modifier.widthIn(max = 300.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
                     ) {
-                        Text(
-                            scopeTag(ex.scope), style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f), maxLines = 1,
-                        )
-                        Text(ex.shown, style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp), color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(ex.shown, style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp), color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
-                AppCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        val err = ex.error
-                        val partial = ex.answer?.takeIf { it.isNotBlank() }
-                        when {
-                            ex.loading && partial == null -> Waiting(if (ex === last) state.uploadPercent else null)
-                            ex.loading -> SelectionContainer { AiMarkdown(partial!!, onPage = onPage) }
-                            else -> {
-                                if (partial != null) SelectionContainer { AiMarkdown(partial, onPage = onPage) }
-                                if (err != null) {
-                                    if (partial != null) Spacer(Modifier.height(AppDimens.space8))
-                                    Text(stringResource(GeminiErrors.messageRes(err)), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    if (ex === last) TextButton(onClick = { onRedo(ex) }, enabled = state.cooldownLeft == 0) { Text(stringResource(R.string.common_try_again), maxLines = 1) }
-                                } else if (partial != null) {
-                                    Row(Modifier.fillMaxWidth().padding(top = AppDimens.space4)) {
-                                        IconButton(onClick = { onCopy(partial) }) { Icon(AppIcons.ContentCopy, stringResource(R.string.viewer_copy)) }
-                                        IconButton(onClick = { onShare(partial) }) { Icon(AppIcons.Share, stringResource(R.string.common_share)) }
-                                        IconButton(onClick = { onRedo(ex) }, enabled = !state.loading && state.cooldownLeft == 0) { Icon(AppIcons.Refresh, stringResource(R.string.ai_redo)) }
-                                    }
+                // The answer: plain text on the page, no box. The actions sit right under it.
+                Column(Modifier.fillMaxWidth()) {
+                    val err = ex.error
+                    val partial = ex.answer?.takeIf { it.isNotBlank() }
+                    when {
+                        ex.loading && partial == null -> Waiting(if (ex === last) state.uploadPercent else null)
+                        ex.loading -> SelectionContainer { AiMarkdown(partial!!, onPage = onPage) }
+                        else -> {
+                            if (partial != null) SelectionContainer { AiMarkdown(partial, onPage = onPage) }
+                            if (err != null) {
+                                if (partial != null) Spacer(Modifier.height(AppDimens.space8))
+                                Text(stringResource(GeminiErrors.messageRes(err)), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (ex === last) TextButton(onClick = { onRedo(ex) }, enabled = state.cooldownLeft == 0) { Text(stringResource(R.string.common_try_again), maxLines = 1) }
+                            } else if (partial != null) {
+                                Row(Modifier.fillMaxWidth().padding(top = AppDimens.space4)) {
+                                    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    IconButton(onClick = { onCopy(partial) }) { Icon(AppIcons.ContentCopy, stringResource(R.string.viewer_copy), Modifier.size(20.dp), tint = tint) }
+                                    IconButton(onClick = { onShare(partial) }) { Icon(AppIcons.Share, stringResource(R.string.common_share), Modifier.size(20.dp), tint = tint) }
+                                    IconButton(onClick = { onRedo(ex) }, enabled = !state.loading && state.cooldownLeft == 0) { Icon(AppIcons.Refresh, stringResource(R.string.ai_redo), Modifier.size(20.dp), tint = tint) }
                                 }
                             }
                         }
@@ -637,64 +629,49 @@ private fun Waiting(percent: Int?) {
     }
 }
 
-/** Quick prompts. They change with the scope and scroll sideways. A chip sends its longer prompt and shows its label. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun Chips(state: AskAiState, enabled: Boolean, onChip: (AiChip, String) -> Unit) {
-    val chips = AiChip.forScope(if (state.kind == 0) AiScope.Page(state.page) else AiScope.Whole)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(AppDimens.space8)) {
-        for (chip in chips) {
-            val label = chipLabel(chip)
-            val src = remember { MutableInteractionSource() }
-            AssistChip(
-                onClick = { onChip(chip, label) },
-                label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge) },
-                modifier = Modifier.pressScale(src),
-                enabled = enabled,
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(AppDimens.hairline, AppTheme.colors.cardBorder),
-                interactionSource = src,
-            )
-        }
-    }
-}
-
-/** The pill input with a round Send button that turns into Stop while an answer is on its way. */
+/** One pill, like ChatGPT and Claude: the text field with the round Send button inside it. Send turns into Stop while an answer is on its way. */
 @Composable
 private fun InputRow(state: AskAiState, onSend: () -> Unit, onStop: () -> Unit) {
     val loading = state.loading
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(AppDimens.space8)) {
+    val wait = state.cooldownLeft
+    val sendLabel = stringResource(if (loading) R.string.ai_stop else R.string.ai_send)
+    val canSend = loading || (state.input.isNotBlank() && wait == 0)
+    val clear = androidx.compose.ui.graphics.Color.Transparent
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
         TextField(
             value = state.input,
             onValueChange = { state.input = it },
             modifier = Modifier.weight(1f),
             placeholder = { Text(stringResource(R.string.ai_input), maxLines = 1) },
-            maxLines = 4,
-            shape = RoundedCornerShape(24.dp),
-            colors = pillColors(),
+            maxLines = 5,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = clear, unfocusedContainerColor = clear, disabledContainerColor = clear,
+                focusedIndicatorColor = clear, unfocusedIndicatorColor = clear, disabledIndicatorColor = clear,
+            ),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
         )
-        val wait = state.cooldownLeft
-        val sendLabel = stringResource(if (loading) R.string.ai_stop else R.string.ai_send)
-        val canSend = loading || (state.input.isNotBlank() && wait == 0)
         Box(
-            Modifier.size(48.dp).clip(CircleShape)
-                .background(if (loading) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary.copy(alpha = if (canSend) 1f else 0.4f))
+            Modifier.size(40.dp).clip(CircleShape)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = if (canSend) 1f else 0.25f))
                 .clickable(enabled = canSend, role = Role.Button) { if (loading) onStop() else onSend() },
             contentAlignment = Alignment.Center,
         ) {
             if (wait > 0 && !loading) {
                 // After a 429 the button shows the seconds left, then turns back into Send
                 Text(
-                    "$wait", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary,
+                    "$wait", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.surface,
                     maxLines = 1, modifier = Modifier.semantics { contentDescription = sendLabel },
                 )
             } else {
                 Icon(
-                    if (loading) AppIcons.Stop else AppIcons.Send,
+                    if (loading) AppIcons.Stop else AppIcons.ArrowForward,
                     sendLabel,
-                    tint = if (loading) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
