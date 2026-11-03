@@ -21,7 +21,11 @@ class GeminiErrorsTest {
     }
 
     @Test fun unexpectedCodesAreBusyNotACrash() {
-        for (code in listOf(0, 100, 301, 402, 413, 418, 599)) assertEquals(code.toString(), GeminiError.Busy, GeminiErrors.fromHttp(code))
+        for (code in listOf(0, 100, 301, 402, 418, 599)) assertEquals(code.toString(), GeminiError.Busy, GeminiErrors.fromHttp(code))
+    }
+
+    @Test fun payloadTooLargeIsAFileProblem() {
+        assertEquals(GeminiError.File, GeminiErrors.fromHttp(413))
     }
 
     @Test fun successCodesAreNoError() {
