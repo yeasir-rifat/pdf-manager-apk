@@ -11,12 +11,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 
 /**
- * Inter for the English UI, loaded from assets/fonts. The app is English only, so Inter is always the
- * main font.
+ * Inter for English letters and Noto Serif Bengali for Bengali letters, both loaded from assets/fonts.
  *
- * On Android 10+ Kalpurush is chained behind Inter, so Bengali letters (for example in a Bengali file
- * name) still show correctly on a line that also has Inter letters. On Android 8-9 the system's own
- * fallback fonts cover those letters. Any missing file is skipped and the system font is used instead.
+ * Regular and Bold each get their own chain, so a bold heading is bold in both scripts:
+ *   Regular: Inter-Regular  -> NotoSerifBengali-Regular
+ *   Bold:    Inter-Bold     -> NotoSerifBengali-Bold
+ *
+ * On Android 10+ the two fonts are chained, so one line can hold English and Bengali letters and each
+ * letter comes from the right font. On Android 8-9 Typeface cannot be chained, so Inter is used and the
+ * system's own Bengali font covers the Bengali letters.
+ *
+ * Any missing file is skipped: Kalpurush.ttf is still accepted as the Bengali font if the Noto files are
+ * not there, and with no files at all the system font is used.
  */
 class AppFonts(val regular: FontFamily, val bold: FontFamily) {
 
@@ -39,42 +45,40 @@ class AppFonts(val regular: FontFamily, val bold: FontFamily) {
         private const val DIR = "fonts"
         private const val INTER_REGULAR = "Inter-Regular.ttf"
         private const val INTER_BOLD = "Inter-Bold.ttf"
-        private const val KALPURUSH = "Kalpurush.ttf"
+        private const val BN_REGULAR = "NotoSerifBengali-Regular.ttf"
+        private const val BN_BOLD = "NotoSerifBengali-Bold.ttf"
+        private const val BN_OLD = "Kalpurush.ttf" // only used when the Noto files are missing
 
         /** Returns null when none of the font files are present. */
         fun load(context: Context): AppFonts? = runCatching {
             val assets = context.assets
             val present = assets.list(DIR)?.toSet().orEmpty()
-            val hasInterR = INTER_REGULAR in present
-            val hasInterB = INTER_BOLD in present
-            val hasKal = KALPURUSH in present
-            if (!hasInterR && !hasInterB && !hasKal) return null
+            fun firstPresent(vararg files: String): String? = files.firstOrNull { it in present }
 
-            fun family(interFile: String, hasInter: Boolean): FontFamily {
-                val primary = when {
-                    hasInter -> interFile
-                    hasKal -> KALPURUSH
-                    else -> return FontFamily.Default
-                }
+            val latinR = firstPresent(INTER_REGULAR, INTER_BOLD)
+            val latinB = firstPresent(INTER_BOLD, INTER_REGULAR)
+            val bengaliR = firstPresent(BN_REGULAR, BN_BOLD, BN_OLD)
+            val bengaliB = firstPresent(BN_BOLD, BN_REGULAR, BN_OLD)
+            if (latinR == null && bengaliR == null) return null
+
+            fun family(latin: String?, bengali: String?): FontFamily {
+                val primary = latin ?: bengali ?: return FontFamily.Default
                 val typeface: Typeface? =
-                    if (Build.VERSION.SDK_INT >= 29 && primary != KALPURUSH && hasKal) chained(assets, primary)
+                    if (Build.VERSION.SDK_INT >= 29 && latin != null && bengali != null) chained(assets, latin, bengali)
                     else runCatching { Typeface.createFromAsset(assets, "$DIR/$primary") }.getOrNull()
                 return typeface?.let { FontFamily(it) } ?: FontFamily.Default
             }
-            val regular = family(INTER_REGULAR, hasInterR)
-            // If only one Inter weight is present, use it for both
-            val bold = family(if (hasInterB) INTER_BOLD else INTER_REGULAR, hasInterB || hasInterR)
-            AppFonts(regular, bold)
+            AppFonts(regular = family(latinR, bengaliR), bold = family(latinB, bengaliB))
         }.getOrNull()
 
         // Only called on Android 10+ (see the SDK_INT check in load); the annotation tells Lint so
         @RequiresApi(29)
-        private fun chained(assets: AssetManager, interFile: String): Typeface? = runCatching {
+        private fun chained(assets: AssetManager, latinFile: String, bengaliFile: String): Typeface? = runCatching {
             fun fam(file: String) = android.graphics.fonts.FontFamily.Builder(
                 android.graphics.fonts.Font.Builder(assets, "$DIR/$file").build()
             ).build()
-            Typeface.CustomFallbackBuilder(fam(interFile))
-                .addCustomFallback(fam(KALPURUSH))
+            Typeface.CustomFallbackBuilder(fam(latinFile))
+                .addCustomFallback(fam(bengaliFile))
                 .setSystemFallback("sans-serif")
                 .build()
         }.getOrNull()

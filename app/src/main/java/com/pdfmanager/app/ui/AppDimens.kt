@@ -28,7 +28,7 @@ object AppDimens {
 /**
  * The four text styles of the app: Title, Subtitle, Body and Caption.
  *
- * They start from the Material styles, so they keep the app font (Inter and Kalpurush) and follow
+ * They start from the Material styles, so they keep the app font (Inter and Noto Serif Bengali) and follow
  * the theme. Every line height is at least 1.4 times the font size, so Bengali marks above and
  * below the line are never clipped.
  */
