@@ -164,7 +164,9 @@ class MainActivity : ComponentActivity() {
                                 onPrint = { uri, name ->
                                     nav.navigate("print-properties/${Uri.encode(uri)}?name=${Uri.encode(name)}")
                                 },
-                                onTool = go
+                                onTool = go,
+                                // A plain navigate, not a tab switch, so Back from Settings returns to the PDF
+                                onOpenSettings = { nav.navigate(MainTab.Settings.route) { launchSingleTop = true } }
                             )
                         }
                         composable(

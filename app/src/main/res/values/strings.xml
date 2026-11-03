@@ -320,4 +320,78 @@
 
     <!-- Tools: recently used -->
     <string name="tools_recent">Recently used</string>
+
+    <!-- Ask AI -->
+    <string name="ai_title">Ask AI</string>
+    <string name="ai_get_key">Get free key</string>
+
+    <!-- Ask AI: settings -->
+    <string name="ai_set_title">AI</string>
+    <string name="ai_set_key">API key</string>
+    <string name="ai_set_key_none">Not set</string>
+    <string name="ai_key_paste">Paste</string>
+    <string name="ai_key_clear">Clear</string>
+    <string name="ai_key_save">Save</string>
+    <string name="ai_set_model">Model</string>
+    <string name="ai_model_flash">Flash</string>
+    <string name="ai_model_lite">Flash Lite</string>
+    <string name="ai_model_pro">Pro</string>
+    <string name="ai_model_custom">Custom</string>
+    <string name="ai_set_custom">Custom model</string>
+    <string name="ai_set_lang">Answer language</string>
+    <string name="ai_lang_auto">Auto</string>
+    <string name="ai_lang_en">English</string>
+    <string name="ai_lang_bn">বাংলা</string>
+    <string name="ai_set_len">Answer length</string>
+    <string name="ai_len_short">Short</string>
+    <string name="ai_len_normal">Normal</string>
+    <string name="ai_len_long">Detailed</string>
+    <string name="ai_set_test">Test connection</string>
+    <string name="ai_test_ok">OK</string>
+    <string name="ai_set_privacy">Privacy</string>
+    <string name="ai_set_clear">Clear AI data</string>
+    <string name="ai_clear_title">Clear AI data?</string>
+    <string name="ai_clear_confirm">Clear</string>
+
+    <!-- Ask AI: short errors -->
+    <string name="ai_err_key">Key not valid</string>
+    <string name="ai_err_denied">Access denied</string>
+    <string name="ai_err_model">Model not found</string>
+    <string name="ai_err_limit">Limit reached</string>
+    <string name="ai_err_busy">Google is busy</string>
+    <string name="ai_err_offline">No internet</string>
+    <string name="ai_err_timeout">Timed out</string>
+    <string name="ai_err_empty">No answer</string>
+    <string name="ai_err_blocked">Blocked</string>
+    <string name="ai_err_pages">Over 1000 pages</string>
+    <string name="ai_err_file">Could not read PDF</string>
+    <string name="ai_scope_page">This page</string>
+    <string name="ai_scope_whole">Whole PDF</string>
+    <string name="ai_scope_range">Range</string>
+    <string name="ai_page_of">%1$d / %2$d</string>
+    <string name="ai_tag_page">Page %1$d</string>
+    <string name="ai_tag_pages">Pages %1$s</string>
+    <string name="ai_range_set">Set</string>
+    <string name="ai_input">Ask</string>
+    <string name="ai_send">Send</string>
+    <string name="ai_stop">Stop</string>
+    <string name="ai_redo">Redo</string>
+    <string name="ai_latest">Latest</string>
+    <string name="ai_prev_page">Previous page</string>
+    <string name="ai_next_page">Next page</string>
+    <string name="ai_new_chat">New chat</string>
+    <string name="ai_settings">AI settings</string>
+    <string name="ai_add_key">Add API key</string>
+    <string name="ai_empty_page">Ask this page</string>
+    <string name="ai_empty_whole">Ask this PDF</string>
+    <string name="ai_empty_range">Ask these pages</string>
+    <string name="ai_chip_explain">Explain</string>
+    <string name="ai_chip_summarize">Summarize</string>
+    <string name="ai_chip_detail">In detail</string>
+    <string name="ai_chip_points">Key points</string>
+    <string name="ai_chip_outline">Outline</string>
+    <string name="ai_chip_quiz">Quiz me</string>
+    <string name="ai_consent_title">Send to Google Gemini?</string>
+    <string name="ai_consent_send">Send</string>
+    <string name="ai_uploading">Uploading %1$d%%</string>
 </resources>

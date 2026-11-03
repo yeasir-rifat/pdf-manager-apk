@@ -12,6 +12,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import com.pdfmanager.app.data.AiModels
+import com.pdfmanager.app.data.AiPrefs
+import com.pdfmanager.app.data.GeminiCheck
+import com.pdfmanager.app.data.GeminiError
+import com.pdfmanager.app.data.GeminiErrors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -85,6 +96,7 @@ import androidx.compose.runtime.collectAsState
 import android.widget.Toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -94,7 +106,7 @@ import kotlinx.coroutines.withContext
  * search-inside-PDFs come from the shared [LibraryViewModel]. Nothing is stored twice.
  *
  * Every topic is always visible: a small icon and title, then one card of rows. Order: Appearance,
- * Files, Saving, Feedback, Google Drive, About.
+ * Files, Saving, Feedback, AI, Backup, Google Drive, About.
  */
 @Composable
 fun SettingsScreen(
@@ -119,6 +131,7 @@ fun SettingsScreen(
                 FilesSection(vm)
                 SavingSection()
                 FeedbackSection()
+                AiSection()
                 BackupSection(vm)
                 DriveSection()
                 AboutSection()
@@ -276,6 +289,280 @@ private fun FeedbackSection() {
             title = stringResource(R.string.settings_vibration),
             checked = vibration,
             onChange = { vibration = it; HapticPrefs.set(ctx, it) }
+        )
+    }
+}
+
+/** Ask AI: the Gemini API key, model and answer style. The key stays in the private "ai_settings" file. */
+@Composable
+private fun AiSection() {
+    val ctx = LocalContext.current
+    val prefs = remember { AiPrefs.of(ctx) }
+    var keyHint by remember { mutableStateOf(prefs.keyHint()) }
+    var model by remember { mutableStateOf(prefs.model) }
+    var customModel by remember { mutableStateOf(prefs.customModel) }
+    var language by remember { mutableStateOf(prefs.language) }
+    var length by remember { mutableStateOf(prefs.length) }
+    var keyDialog by remember { mutableStateOf(false) }
+    var modelDialog by remember { mutableStateOf(false) }
+    var customDialog by remember { mutableStateOf(false) }
+    var clearDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var testJob by remember { mutableStateOf<Job?>(null) }
+    var testBusy by remember { mutableStateOf(false) }
+    var testDone by remember { mutableStateOf(false) }
+    var testError by remember { mutableStateOf<GeminiError?>(null) }
+
+    // A new key or model makes the last test result out of date, and stops a test that is still running.
+    LaunchedEffect(keyHint, model, customModel) {
+        testJob?.cancel()
+        testJob = null
+        testBusy = false
+        testDone = false
+        testError = null
+    }
+
+    val modelLabels = listOf(
+        "flash" to R.string.ai_model_flash,
+        "lite" to R.string.ai_model_lite,
+        "pro" to R.string.ai_model_pro,
+        AiModels.CUSTOM to R.string.ai_model_custom
+    )
+    val languageKeys = AiPrefs.languages
+    val lengthKeys = AiPrefs.lengths
+
+    SettingsGroup(AppIcons.Sparkle, Accent.Violet, stringResource(R.string.ai_set_title)) {
+        ValueRow(
+            title = stringResource(R.string.ai_set_key),
+            value = keyHint ?: stringResource(R.string.ai_set_key_none),
+            onClick = { keyDialog = true }
+        )
+        RowDivider()
+        ValueRow(
+            title = stringResource(R.string.ai_get_key),
+            value = null,
+            showChevron = false,
+            trailing = {
+                Icon(AppIcons.OpenInNew, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            },
+            onClick = {
+                runCatching {
+                    ctx.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/apikey"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
+        )
+        RowDivider()
+        ValueRow(
+            title = stringResource(R.string.ai_set_model),
+            value = stringResource(modelLabels.first { it.first == model }.second),
+            onClick = { modelDialog = true }
+        )
+        if (model == AiModels.CUSTOM) {
+            RowDivider()
+            ValueRow(
+                title = stringResource(R.string.ai_set_custom),
+                value = customModel.ifEmpty { stringResource(R.string.ai_set_key_none) },
+                onClick = { customDialog = true }
+            )
+        }
+        RowDivider()
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SettingsLabel(stringResource(R.string.ai_set_lang))
+            Segmented(
+                options = listOf(
+                    stringResource(R.string.ai_lang_auto),
+                    stringResource(R.string.ai_lang_en),
+                    stringResource(R.string.ai_lang_bn)
+                ),
+                selected = languageKeys.indexOf(language).coerceAtLeast(0),
+                onSelect = { language = languageKeys[it]; prefs.language = language }
+            )
+        }
+        RowDivider()
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SettingsLabel(stringResource(R.string.ai_set_len))
+            Segmented(
+                options = listOf(
+                    stringResource(R.string.ai_len_short),
+                    stringResource(R.string.ai_len_normal),
+                    stringResource(R.string.ai_len_long)
+                ),
+                selected = lengthKeys.indexOf(length).coerceAtLeast(0),
+                onSelect = { length = lengthKeys[it]; prefs.length = length }
+            )
+        }
+        RowDivider()
+        ValueRow(
+            title = stringResource(R.string.ai_set_test),
+            value = when {
+                testBusy || !testDone -> null
+                else -> stringResource(testError?.let { GeminiErrors.messageRes(it) } ?: R.string.ai_test_ok)
+            },
+            enabled = !testBusy,
+            showChevron = false,
+            trailing = { if (testBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) },
+            onClick = {
+                testBusy = true
+                testDone = false
+                testError = null
+                testJob = scope.launch {
+                    try {
+                        testError = GeminiCheck.run(prefs.apiKey, prefs.modelId())
+                        testDone = true
+                    } finally {
+                        testBusy = false
+                    }
+                }
+            }
+        )
+        if (AiPrefs.PRIVACY_URL.isNotBlank()) {
+            RowDivider()
+            ValueRow(
+                title = stringResource(R.string.ai_set_privacy),
+                value = null,
+                showChevron = false,
+                trailing = {
+                    Icon(AppIcons.OpenInNew, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                },
+                onClick = {
+                    runCatching {
+                        ctx.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(AiPrefs.PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
+            )
+        }
+        RowDivider()
+        ValueRow(
+            title = stringResource(R.string.ai_set_clear),
+            value = null,
+            titleColor = MaterialTheme.colorScheme.error,
+            showChevron = false,
+            onClick = { clearDialog = true }
+        )
+    }
+
+    if (keyDialog) {
+        var text by remember { mutableStateOf(prefs.apiKey) }
+        var visible by remember { mutableStateOf(false) }
+        AlertDialog(
+            modifier = Modifier.dialogEnter(),
+            onDismissRequest = { keyDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text(stringResource(R.string.ai_set_key), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.filterNot(Char::isWhitespace) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = { visible = !visible }) {
+                                Icon(
+                                    if (visible) AppIcons.VisibilityOff else AppIcons.Visibility,
+                                    stringResource(if (visible) R.string.common_hide else R.string.common_show)
+                                )
+                            }
+                        }
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val pasted = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()
+                            if (!pasted.isNullOrBlank()) text = pasted.filterNot(Char::isWhitespace)
+                        }) { Text(stringResource(R.string.ai_key_paste), maxLines = 1) }
+                        TextButton(onClick = {
+                            prefs.apiKey = ""
+                            keyHint = null
+                            keyDialog = false
+                        }) { Text(stringResource(R.string.ai_key_clear), maxLines = 1, color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.apiKey = text
+                    keyHint = prefs.keyHint()
+                    keyDialog = false
+                }) { Text(stringResource(R.string.ai_key_save), maxLines = 1) }
+            },
+            dismissButton = { TextButton(onClick = { keyDialog = false }) { Text(stringResource(R.string.common_cancel), maxLines = 1) } }
+        )
+    }
+    if (modelDialog) {
+        AlertDialog(
+            modifier = Modifier.dialogEnter(),
+            onDismissRequest = { modelDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text(stringResource(R.string.ai_set_model), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column {
+                    modelLabels.forEach { (key, label) ->
+                        ChoiceRow(stringResource(label), model == key) {
+                            model = key
+                            prefs.model = key
+                            modelDialog = false
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { modelDialog = false }) { Text(stringResource(R.string.common_cancel), maxLines = 1) } }
+        )
+    }
+    if (customDialog) {
+        var text by remember { mutableStateOf(customModel) }
+        AlertDialog(
+            modifier = Modifier.dialogEnter(),
+            onDismissRequest = { customDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text(stringResource(R.string.ai_set_custom), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.filterNot(Char::isWhitespace) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.customModel = text
+                    customModel = prefs.customModel
+                    customDialog = false
+                }) { Text(stringResource(R.string.ai_key_save), maxLines = 1) }
+            },
+            dismissButton = { TextButton(onClick = { customDialog = false }) { Text(stringResource(R.string.common_cancel), maxLines = 1) } }
+        )
+    }
+    if (clearDialog) {
+        AlertDialog(
+            modifier = Modifier.dialogEnter(),
+            onDismissRequest = { clearDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text(stringResource(R.string.ai_clear_title), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.clear()
+                    com.pdfmanager.app.data.AiPdfOpen.clearCache()
+                    keyHint = null
+                    model = prefs.model
+                    customModel = prefs.customModel
+                    language = prefs.language
+                    length = prefs.length
+                    clearDialog = false
+                }) { Text(stringResource(R.string.ai_clear_confirm), maxLines = 1, color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { clearDialog = false }) { Text(stringResource(R.string.common_cancel), maxLines = 1) } }
         )
     }
 }
@@ -616,7 +903,7 @@ private fun ValueRow(
 
 /** Pill-shaped choice between a few short options. The chosen one is filled. */
 @Composable
-private fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+internal fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)

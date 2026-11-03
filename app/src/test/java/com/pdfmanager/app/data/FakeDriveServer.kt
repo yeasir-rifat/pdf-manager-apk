@@ -12,7 +12,19 @@ class FakeReq(
     val headers: Map<String, String>, val body: ByteArray,
 )
 
-class FakeReply(val code: Int, val body: String = "", val headers: Map<String, String> = emptyMap())
+/**
+ * [chunks] makes a streamed reply: each piece is sent as its own HTTP chunk, with [chunkDelayMs] between them, so a test
+ * can cut a word or a multi-byte character in two. With [broken] the reply ends without the closing chunk, like a lost
+ * connection, and the client sees an IOException.
+ */
+class FakeReply(
+    val code: Int,
+    val body: String = "",
+    val headers: Map<String, String> = emptyMap(),
+    val chunks: List<ByteArray>? = null,
+    val chunkDelayMs: Long = 15,
+    val broken: Boolean = false,
+)
 
 /**
  * A small local HTTP server that stands in for Google Drive in unit tests.
@@ -95,6 +107,24 @@ class FakeDriveServer(private val respond: (FakeReq) -> FakeReply) {
                 val req = FakeReq(parts[0], path, query, headers, body)
                 requests += req
                 val reply = respond(req)
+                if (reply.chunks != null) {
+                    val out = s.getOutputStream()
+                    val head = StringBuilder("HTTP/1.1 ${reply.code} OK\r\n")
+                    reply.headers.forEach { (k, v) -> head.append(k).append(": ").append(v).append("\r\n") }
+                    head.append("Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
+                    out.write(head.toString().toByteArray(Charsets.ISO_8859_1))
+                    out.flush()
+                    for (piece in reply.chunks) {
+                        out.write((Integer.toHexString(piece.size) + "\r\n").toByteArray(Charsets.ISO_8859_1))
+                        out.write(piece)
+                        out.write("\r\n".toByteArray(Charsets.ISO_8859_1))
+                        out.flush()
+                        Thread.sleep(reply.chunkDelayMs)
+                    }
+                    if (!reply.broken) out.write("0\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
+                    out.flush()
+                    return
+                }
                 val bytes = reply.body.toByteArray(Charsets.UTF_8)
                 val head = StringBuilder("HTTP/1.1 ${reply.code} OK\r\n")
                 reply.headers.forEach { (k, v) -> head.append(k).append(": ").append(v).append("\r\n") }

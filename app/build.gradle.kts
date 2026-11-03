@@ -13,8 +13,8 @@ android {
         applicationId = "com.pdfmanager.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.4"
+        versionCode = 5
+        versionName = "0.5"
     }
     // One permanent key signs every release, so a new APK installs over the old one and keeps the user's data.
     // The key comes from environment variables (GitHub Actions) or gradle properties (-PkeystoreFile=...).

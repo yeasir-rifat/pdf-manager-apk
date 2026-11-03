@@ -501,7 +501,8 @@ private fun PasswordDialog(error: String?, busy: Boolean, onDismiss: () -> Unit,
 fun ViewerScreen(
     uriString: String, onBack: () -> Unit,
     onPrint: (String, String) -> Unit = { _, _ -> },
-    onTool: (String) -> Unit = {}
+    onTool: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -606,6 +607,17 @@ fun ViewerScreen(
         }
     }
     var showPages by remember { mutableStateOf(false) }
+    var showAskAi by remember { mutableStateOf(false) }
+    // The dot on the Ask AI icon stays until the panel has been opened once. The AI preferences keep that across launches.
+    var askAiSeen by remember { mutableStateOf(com.pdfmanager.app.data.AiPrefs.of(context).seen) }
+    // The chat lives as long as the viewer, so it survives closing the panel and rotation
+    val askAi = remember(uriString) { AskAiState() }
+    DisposableEffect(uriString) {
+        onDispose {
+            askAi.job?.cancel()
+            com.pdfmanager.app.data.AiPdfOpen.clearCache()
+        }
+    }
     var moreMenu by remember { mutableStateOf(false) }
     val current by remember { derivedStateOf { listState.firstVisibleItemIndex + 1 } }
     // The page the reader is looking at (the one across the middle of the screen). Bookmarks use this,
@@ -763,6 +775,9 @@ fun ViewerScreen(
                 actions = {
                     IconButton(onClick = { Share.pdfs(context, listOf(uriString)) }) {
                         Icon(AppIcons.Share, contentDescription = stringResource(R.string.common_share))
+                    }
+                    IconButton(onClick = { searchOpen = true }) {
+                        Icon(AppIcons.Search, contentDescription = stringResource(R.string.viewer_search))
                     }
                     Box {
                         IconButton(onClick = { moreMenu = true }) { Icon(AppIcons.MoreVert, stringResource(R.string.common_more)) }
@@ -1056,13 +1071,33 @@ fun ViewerScreen(
         ) {
             ViewerBottomBar(
                 bookmarked = bookmarkPage in bookmarks,
-                onSearch = { searchOpen = true },
+                showDot = !askAiSeen,
+                onAskAi = {
+                    askAiSeen = true
+                    com.pdfmanager.app.data.AiPrefs.of(context).seen = true
+                    askAi.reset(bookmarkPage)
+                    showAskAi = true
+                },
                 onPages = { showPages = true },
                 onBookmark = toggleBookmark,
                 onEdit = { showTools = true }
             )
         }
         }
+    }
+
+    val askHolder = holder
+    if (showAskAi && askHolder != null) {
+        AskAiPanel(
+            state = askAi,
+            uri = openUri,
+            totalPages = askHolder.pageCount,
+            readerPage = bookmarkPage,
+            onDismiss = { showAskAi = false },
+            onOpenSettings = { showAskAi = false; onOpenSettings() },
+            // The panel stays open, the page moves behind it
+            onGoToPage = { page -> scope.launch { listState.animateScrollToItem((page - 1).coerceIn(0, askHolder.pageCount - 1)) } },
+        )
     }
 
     val h = holder

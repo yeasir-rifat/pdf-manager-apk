@@ -99,6 +99,9 @@ object AppIcons {
     val ScreenRotation: ImageVector by lazy { icon("ScreenRotation", "M16.48 2.52c3.27 1.55 5.61 4.72 5.97 8.48h1.5C23.44 4.84 18.29 0 12 0l-.66.03 3.81 3.81 1.33-1.32zm-6.25-.77c-.59-.59-1.54-.59-2.12 0L1.75 8.11c-.59.59-.59 1.54 0 2.12l12.02 12.02c.59.59 1.54.59 2.12 0l6.36-6.36c.59-.59.59-1.54 0-2.12L10.23 1.75zm4.6 19.44L2.81 9.17l6.36-6.36 12.02 12.02-6.36 6.36zm-7.31.29C4.25 19.94 1.91 16.76 1.55 13H.05C.56 19.16 5.71 24 12 24l.66-.03-3.81-3.81-1.33 1.32z") }
     val PhoneAndroid: ImageVector by lazy { icon("PhoneAndroid", "M17 1.01 7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z") }
     val GoToPage: ImageVector by lazy { icon("GoToPage", "M11.59 7.41 15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z") }
+    val Sparkle: ImageVector by lazy { icon("Sparkle", "M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z") }
+    val Send: ImageVector by lazy { icon("Send", "M2.01 21 23 12 2.01 3 2 10l15 2-15 2z") }
+    val Stop: ImageVector by lazy { icon("Stop", "M6 6h12v12H6z") }
 }
 
 private fun icon(name: String, vararg paths: String, autoMirror: Boolean = false): ImageVector =

@@ -10,9 +10,11 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.text.format.Formatter
 import android.view.WindowManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -396,11 +398,12 @@ suspend fun loadDocInfo(context: Context, uri: Uri, name: String): DocInfo = wit
 /** Height of the floating bottom toolbar without the navigation bar. The page list keeps this much free at its end. */
 internal val ViewerBottomBarHeight = 64.dp
 
-/** Search, all pages, bookmark and tools, one tap away. Floats over the pages like the top bar, so showing or hiding it never moves a page. */
+/** Ask AI, all pages, bookmark and tools, one tap away. Floats over the pages like the top bar, so showing or hiding it never moves a page. */
 @Composable
 internal fun ViewerBottomBar(
     bookmarked: Boolean,
-    onSearch: () -> Unit,
+    showDot: Boolean,
+    onAskAi: () -> Unit,
     onPages: () -> Unit,
     onBookmark: () -> Unit,
     onEdit: () -> Unit,
@@ -412,7 +415,7 @@ internal fun ViewerBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BarAction(AppIcons.Search, stringResource(R.string.viewer_search_short), onSearch, Modifier.weight(1f))
+            BarAction(AppIcons.Sparkle, stringResource(R.string.ai_title), onAskAi, Modifier.weight(1f), showDot = showDot)
             BarAction(AppIcons.GridView, stringResource(R.string.viewer_all_pages), onPages, Modifier.weight(1f))
             BarAction(
                 if (bookmarked) AppIcons.Bookmark else AppIcons.BookmarkBorder,
@@ -426,7 +429,8 @@ internal fun ViewerBottomBar(
 
 @Composable
 private fun BarAction(
-    icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier, tint: Color? = null
+    icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier, tint: Color? = null,
+    showDot: Boolean = false
 ) {
     val c = tint ?: MaterialTheme.colorScheme.onSurfaceVariant
     Column(
@@ -434,7 +438,15 @@ private fun BarAction(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, contentDescription = null, tint = c, modifier = Modifier.size(24.dp))
+        Box {
+            Icon(icon, contentDescription = null, tint = c, modifier = Modifier.size(24.dp))
+            if (showDot) {
+                Box(
+                    Modifier.size(8.dp).align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                )
+            }
+        }
         Text(label, style = MaterialTheme.typography.labelSmall, color = c, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
