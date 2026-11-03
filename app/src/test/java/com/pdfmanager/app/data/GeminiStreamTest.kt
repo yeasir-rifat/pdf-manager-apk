@@ -117,7 +117,10 @@ class GeminiStreamTest {
     }
 
     @Test fun httpErrorsAreShortAndNothingIsStreamed() {
-        for ((code, err) in listOf(429 to GeminiError.Limit, 403 to GeminiError.Denied, 503 to GeminiError.Busy)) {
+        // A 403 on a saved file link is treated as an expired link: the link is dropped and the PDF is uploaded again.
+        // askLargeSuspend cannot reopen the PDF (openSource returns File), so that case ends as File, not Denied.
+        // (GeminiAskLargeTest.aStaleLinkIsTriedOnlyOnceAndNeverLoops covers the real 403 path.)
+        for ((code, err) in listOf(429 to GeminiError.Limit, 403 to GeminiError.File, 503 to GeminiError.Busy)) {
             val s = serve { FakeReply(code, "{\"error\":{\"message\":\"secret k-1234\"}}") }
             val seen = ArrayList<String>()
             val r = askLarge(s) { seen += it }
