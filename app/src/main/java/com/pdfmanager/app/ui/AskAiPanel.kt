@@ -20,7 +20,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
+<<<<<<< HEAD
 import androidx.compose.animation.core.animateFloatAsState
+=======
+>>>>>>> e31455ecc4a714d6dcfacededc238ad1090766f4
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -478,7 +481,10 @@ fun AskAiPanel(
                                     )
                                 }
                                 if (hasKey) {
+<<<<<<< HEAD
                                     ScopeDropdown(state = state, totalPages = totalPages, onTick = { haptics.tick() })
+=======
+>>>>>>> e31455ecc4a714d6dcfacededc238ad1090766f4
                                     IconButton(onClick = { state.newChat() }) {
                                         Icon(AppIcons.NewChat, stringResource(R.string.ai_new_chat))
                                     }
@@ -490,7 +496,11 @@ fun AskAiPanel(
                                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(KEY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                                 })
                             } else {
+<<<<<<< HEAD
                                 ScopeDetails(state, totalPages, onTick = { haptics.tick() }, onPickPage = { hideKeyboard(); pickPage = true })
+=======
+                                ScopeControl(state, totalPages, onTick = { haptics.tick() }, onPickPage = { hideKeyboard(); pickPage = true })
+>>>>>>> e31455ecc4a714d6dcfacededc238ad1090766f4
                                 Spacer(Modifier.height(AppDimens.space8))
                                 Box(Modifier.weight(1f).fillMaxWidth()) {
                                     if (state.exchanges.isEmpty()) SmallEmpty(state)
