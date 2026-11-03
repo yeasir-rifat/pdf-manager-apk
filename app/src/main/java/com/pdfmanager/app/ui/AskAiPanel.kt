@@ -424,19 +424,25 @@ fun AskAiPanel(
     // the keyboard. It is worked out while measuring, so the animation never recomposes the chat.
     val panelSizing = Modifier.fillMaxWidth().layout { measurable, constraints ->
         val screen = constraints.maxHeight
+        // The parent Box applies imePadding(), so these constraints already end above the keyboard.
+        // Do not subtract or offset by the IME inset again: doing so leaves a second keyboard-sized gap.
         val roomNoIme = (screen - statusInsets.getTop(this)).coerceAtLeast(0)
-        val room = roomNoIme - imeInsets.getBottom(this)
         val minPx = min(minPanelPx, roomNoIme)
         val half = max(min((screen * 0.62f).roundToInt(), roomNoIme), minPx)
         val wanted = half + ((roomNoIme - half) * frac.floatValue).roundToInt()
-        val h = max(min(wanted, room), minPx)
+        val h = max(min(wanted, roomNoIme), minPx)
         val placeable = measurable.measure(constraints.copy(minHeight = h, maxHeight = h))
         layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-    }.offset { IntOffset(0, -imeInsets.getBottom(this)) }
+    }
     val none = remember { MutableInteractionSource() }
     val none2 = remember { MutableInteractionSource() }
 
-    Box(Modifier.fillMaxSize().onSizeChanged { screenPx = it.height }, contentAlignment = Alignment.BottomCenter) {
+    // Reserve the IME area once at the root. The panel is measured in the remaining space,
+    // so its bottom edge sits directly above the keyboard without a second manual offset.
+    Box(
+        Modifier.fillMaxSize().imePadding().onSizeChanged { screenPx = it.height },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
         // The dim layer behind the panel. It fades as the panel grows. A tap on it is one step back.
         AnimatedVisibility(visibleState = visible, enter = fadeIn()) {
             Box(
