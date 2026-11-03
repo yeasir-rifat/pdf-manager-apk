@@ -661,7 +661,7 @@ private fun BackupSection(vm: LibraryViewModel) {
         }
     }
 
-    SettingsGroup(null, Accent.Teal, stringResource(R.string.settings_backup)) {
+    SettingsGroup(stringResource(R.string.settings_backup)) {
         val p = profile
         if (p == null) {
             ValueRow(
